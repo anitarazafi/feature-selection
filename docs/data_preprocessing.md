@@ -12,4 +12,14 @@
 - convert ISO_TIME column data type to datetime, make sure all entries have valid timestamp
 - convert numerical values to numeric data type
 - standardize categorical values and quick check how many unique values are present for each column
-- 
+
+## Handle duplicates
+
+## Sort by time and identifiers
+
+## Create derived features 
+
+## Encode categorical variables
+- We used one-hot encoding to transform the categorical variables
+
+## Save cleaned dataset for modeling
