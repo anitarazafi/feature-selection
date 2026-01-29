@@ -1,0 +1,7 @@
+- Define which dataset to use
+- For each dataset:
+    - Load dataset
+    - Preprocess
+          - Drop columns defined in the config
+          - Handle missing values by replacing them by the median of the column
+          - Drop duplicates

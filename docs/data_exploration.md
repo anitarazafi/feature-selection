@@ -1,0 +1,3 @@
+- Load dataset
+- Remove the first row which is not valid
+- Drop columns if missing values is more than 60% (add columns list to the config file) ["features"]["drop"]
