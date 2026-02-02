@@ -7,4 +7,8 @@
           - Sort dataframe by ISO_TIME
           - Handle missing values by replacing them by the median of the column
           - Drop duplicates
-          - Encode using onehot
+    - Generate the binary target column based on the numeric target column
+    - Save preprocessed data X.csv y.csv
+    - Save data summary in a json to easily plot later
+    - Split data
+    - Encode using onehot

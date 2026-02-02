@@ -1,5 +1,4 @@
 from src.preprocessing.clean import drop_columns, correct_dtypes, handle_missing
-from src.preprocessing.encode import encode
 
 def preprocess(df, cfg):
     df = drop_columns(df, cfg["features"].get("drop"))
@@ -7,8 +6,7 @@ def preprocess(df, cfg):
     df = df.sort_values("ISO_TIME")
     df = handle_missing(df, cfg["preprocessing"].get("missing_values"))
     df = df.drop_duplicates()
-    df = encode(df, cfg["preprocessing"].get("encoding", "onehot"))
-
+    
     X = df.drop(cfg["target"], axis=1)
     y = df[cfg["target"]]
 
