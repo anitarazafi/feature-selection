@@ -3,5 +3,8 @@
     - Load dataset
     - Preprocess
           - Drop columns defined in the config
+          - Correct data types (datetime: ISO_TIME, numerical values, and valid sets for categorical values)
+          - Sort dataframe by ISO_TIME
           - Handle missing values by replacing them by the median of the column
           - Drop duplicates
+          - Encode using onehot

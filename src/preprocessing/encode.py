@@ -1,19 +1,22 @@
 import pandas as pd
 
-def encode(df, categorical_cols, encoding="onehot"):
-    df = df.copy()
 
-    if not categorical_cols:
-        return df
+def encode(df, method="onehot"):
+    """
+    Encode categorical features.
 
-    if encoding == "onehot":
-        df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
+    Parameters
+    ----------
+    df : pd.DataFrame
+    method : str
+        "onehot" (default)
 
-    elif encoding == "label":
-        for col in categorical_cols:
-            df[col] = df[col].astype("category").cat.codes
-
-    else:
-        raise ValueError(f"Unknown encoding strategy: {encoding}")
+    Returns
+    -------
+    pd.DataFrame
+    """
+    if method == "onehot":
+        cat_cols = df.select_dtypes(include=["category"]).columns
+        df = pd.get_dummies(df, columns=cat_cols, dummy_na=True)
 
     return df
