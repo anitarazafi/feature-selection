@@ -1,14 +1,27 @@
-- Define which dataset to use
+## Preprocessing Steps
+
+- Define which datasets to use (from config/datasets.yaml)
 - For each dataset:
-    - Load dataset
-    - Preprocess
+    - Load dataset and configuration
+    - Preprocess raw data:
           - Drop columns defined in the config
           - Correct data types (datetime: ISO_TIME, numerical values, and valid sets for categorical values)
-          - Sort dataframe by ISO_TIME
-          - Handle missing values by replacing them by the median of the column
+          - Sort dataframe by ISO_TIME (chronological order)
+          - Handle missing values by replacing them with the median of the column
           - Drop duplicates
     - Generate the binary target column based on the numeric target column
-    - Save preprocessed data X.csv y.csv
-    - Save data summary in a json to easily plot later
-    - Split data
-    - Encode using onehot
+    - Save preprocessed data (X.csv, y.csv) to data/preprocessed/
+    - Save data summary (JSON) to data/summaries/ for visualization
+    - Split data temporally (80% train, 20% test):
+          - Respect time order: use past data (train) to predict future (test)
+          - Train split: first 80% of chronologically sorted data
+          - Test split: last 20% of chronologically sorted data
+    - Encode categorical features:
+          - Fit OneHotEncoder on training data only
+          - Transform both training and test data using fitted encoder
+          - Handle unknown categories in test set with 'ignore' strategy
+    - Scale numerical features:
+          - Fit StandardScaler on training data only
+          - Transform both training and test data using fitted scaler
+    - Save final splits (X_train.csv, X_test.csv, y_train.csv, y_test.csv) to data/.../splits/
+    - Save encoder and scaler objects (encoder.pkl, scaler.pkl) to data/.../splits/ for reproducibility

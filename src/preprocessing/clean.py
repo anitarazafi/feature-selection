@@ -32,7 +32,6 @@ def correct_dtypes(df, cfg):
     Correct column data types
     """
     df = df.copy()
-
     # datetime columns
     datetime_cols = cfg.get("datetime", [])
     for col in datetime_cols:
@@ -65,7 +64,6 @@ def correct_dtypes(df, cfg):
 def handle_missing(df, strategy="mean"):
     """
     Handle missing values.
-
     strategy:
     - "mean"   : numerical mean
     - "median" : numerical median
@@ -76,7 +74,6 @@ def handle_missing(df, strategy="mean"):
         return df.dropna()
 
     df = df.copy()
-
     if strategy in ["mean", "median"]:
         num_cols = df.select_dtypes(include="number").columns
         for col in num_cols:
