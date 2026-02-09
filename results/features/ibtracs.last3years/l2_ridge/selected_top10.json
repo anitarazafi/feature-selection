@@ -1,0 +1,28 @@
+{
+  "top_k": 10,
+  "n_features": 10,
+  "selected_features": [
+    "LAT",
+    "STORM_SPEED",
+    "USA_LAT",
+    "BASIN_WP",
+    "NATURE_SS",
+    "USA_SSHS",
+    "USA_LON",
+    "LON",
+    "BASIN_EP",
+    "DIST2LAND"
+  ],
+  "coefficients": {
+    "DIST2LAND": -17.7781907591972,
+    "BASIN_EP": -0.7375787268931269,
+    "LON": -0.6565503251635629,
+    "USA_LON": -0.6479892163705887,
+    "USA_SSHS": -0.528360620117318,
+    "NATURE_SS": -0.45292815453625324,
+    "BASIN_WP": 0.4515221540571819,
+    "USA_LAT": -0.41311971934169855,
+    "STORM_SPEED": 0.3660760525392945,
+    "LAT": 0.3622202867602497
+  }
+}

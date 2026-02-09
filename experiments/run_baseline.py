@@ -10,6 +10,7 @@ from pathlib import Path
 from src.utils.paths import MODELS_DIR, COMPARISONS_DIR
 from src.utils.data_io import load_splits
 
+# todo anita: pass ds name and hyperparams from cfg
 # Datasets to process
 DATASETS = ["ibtracs.last3years"]
 

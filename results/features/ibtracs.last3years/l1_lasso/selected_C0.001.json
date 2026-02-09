@@ -1,0 +1,10 @@
+{
+  "C": 0.001,
+  "n_features": 1,
+  "selected_features": [
+    "DIST2LAND"
+  ],
+  "coefficients": {
+    "DIST2LAND": -1.0744089104425216
+  }
+}
