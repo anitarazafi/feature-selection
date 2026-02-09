@@ -28,7 +28,7 @@ def save_data_summary(X, y, dataset_name):
     
 
 def save_splits(splits, dataset_name, encoder=None, scaler=None):
-    out_dir = BASE_DIR / "data" / "processed" / dataset_name / "splits"
+    out_dir = BASE_DIR / "data" / "splits" / dataset_name
     out_dir.mkdir(parents=True, exist_ok=True)
     # Save data splits as CSV
     for name, df in splits.items():

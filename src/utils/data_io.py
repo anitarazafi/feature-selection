@@ -1,12 +1,12 @@
 import pickle
 import pandas as pd
-from src.utils.paths import PREPROCESSED_DATA_DIR
+from src.utils.paths import SPLITS_DIR
 
 def load_splits(dataset_name):
     """
     Load saved splits, encoder, and scaler.
     """
-    splits_dir = PREPROCESSED_DATA_DIR / dataset_name / "splits"
+    splits_dir = SPLITS_DIR / dataset_name
     splits = {
         "X_train": pd.read_csv(splits_dir / "X_train.csv"),
         "X_test": pd.read_csv(splits_dir / "X_test.csv"),

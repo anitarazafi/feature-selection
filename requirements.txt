@@ -7,3 +7,4 @@ seaborn
 jupyterlab
 ipykernel
 fastparquet
+xgboost
