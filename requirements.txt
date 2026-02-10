@@ -8,3 +8,5 @@ jupyterlab
 ipykernel
 fastparquet
 xgboost
+shap
+lime
