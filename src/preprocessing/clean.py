@@ -16,16 +16,19 @@ VALID_CATEGORIES = {
     "KMA_CAT": {"TD", "TS", "STS", "TY", "L"}
 }
 
-def drop_columns(df, columns):
+
+GENERIC_MISSING = [None, "", " "]
+
+
+def normalize_missing_values(df):
     """
-    Drop specified columns if they exist.
+    Transform missing values to standart nan
     """
-    if not columns:
-        return df
-        
-    existing = [c for c in columns if c in df.columns]
-    return df.drop(columns=existing)
-    
+    df = df.copy()
+    obj_cols = df.select_dtypes(include="object").columns
+    df[obj_cols] = df[obj_cols].replace(GENERIC_MISSING, np.nan)
+    return df
+
 
 def correct_dtypes(df, cfg):
     """
@@ -85,3 +88,63 @@ def handle_missing(df, strategy="mean"):
             df[col] = df[col].fillna(df[col].mode()[0])
 
     return df
+    
+
+def drop_high_missing_columns(df, threshold=0.6):
+    """
+    Drop columns with missing values above threshold.
+    """
+    # Calculate missing percentage
+    missing_pct = df.isna().sum() / len(df)
+    
+    # Find columns above threshold
+    high_missing = missing_pct[missing_pct > threshold]
+    
+    if len(high_missing) > 0:
+        print(f"\n{'='*60}")
+        print(f"DROPPING HIGH MISSING VALUE COLUMNS (> {threshold*100:.0f}%)")
+        print(f"{'='*60}")
+        print(f"Dropping {len(high_missing)} columns:")
+        for col, pct in high_missing.items():
+            print(f"  - {col:40s} : {pct*100:.1f}% missing")
+        print(f"Columns: {len(df.columns)} -> {len(df.columns) - len(high_missing)}")
+        print(f"{'='*60}\n")
+    else:
+        print(f"\nNo columns with > {threshold*100:.0f}% missing values\n")
+    
+    # Drop columns
+    df_cleaned = df.drop(columns=high_missing.index.tolist())
+    dropped_info = [(col, pct) for col, pct in high_missing.items()]
+    
+    return df_cleaned, dropped_info
+
+
+def remove_target_leakage(X, y, threshold=0.9):
+    """
+    Remove features with extremely high correlation with target.
+    """
+    # Only check numeric columns
+    X_numeric = X.select_dtypes(include=[np.number])
+    
+    # Calculate correlation with target
+    target_corr = X_numeric.corrwith(y).abs()
+    
+    # Find features above threshold
+    leaky_features = target_corr[target_corr > threshold].index.tolist()
+    
+    if leaky_features:
+        print(f"\n{'='*60}")
+        print(f"REMOVING TARGET LEAKAGE (correlation > {threshold})")
+        print(f"{'='*60}")
+        print(f"Removing {len(leaky_features)} features:")
+        for feat in leaky_features:
+            corr_value = target_corr[feat]
+            print(f"  - {feat:30s} : r = {corr_value:.4f}")
+        print(f"{'='*60}\n")
+    else:
+        print(f"\n✓ No features with correlation > {threshold}\n")
+    
+    # Remove leaky features from entire dataframe (including non-numeric)
+    X_cleaned = X.drop(columns=leaky_features, errors='ignore')
+    
+    return X_cleaned, leaky_features

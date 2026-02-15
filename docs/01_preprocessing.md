@@ -4,11 +4,13 @@
 - For each dataset:
     - Load dataset and configuration
     - Preprocess raw data:
-          - Drop columns defined in the config
-          - Correct data types (datetime: ISO_TIME, numerical values, and valid sets for categorical values)
-          - Sort dataframe by ISO_TIME (chronological order)
-          - Handle missing values by replacing them with the median of the column
-          - Drop duplicates
+      - Remove the first row which is not valid
+      - Drop columns if missing values is more than 60% 
+      - Correct data types (datetime: ISO_TIME, numerical values, and valid sets for categorical values)
+      - Sort dataframe by ISO_TIME (chronological order)
+      - Handle missing values by replacing them with the median of the column
+      - Drop duplicates
+      - Drop columns highly correlated to the target column (r > 0.9)
     - Generate the binary target column based on the numeric target column
     - Save preprocessed data (X.csv, y.csv) to data/preprocessed/
     - Save data summary (JSON) to data/summaries/ for visualization
