@@ -1,26 +1,14 @@
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, chi2
 import time
 import json
 from pathlib import Path
 import pickle
-
 from src.utils.paths import SPLITS_DIR, MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
 from src.utils.data_io import load_splits
-
-# todo anita: pass ds name and hyperparams from cfg
-# Datasets and models
-DATASETS = ["ibtracs.last3years"]
-MODELS = {
-    "logistic_regression": LogisticRegression(max_iter=1000, random_state=42),
-    "random_forest": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
-    "xgboost": XGBClassifier(random_state=42, n_jobs=-1, eval_metric='logloss')
-}
+from src.utils.load_models import load_models
 
 # Feature selection configurations
 N_FEATURES_TO_SELECT = [10, 20, 30, 40, 50]  # Different feature counts to try
@@ -111,14 +99,12 @@ def chi_square_selection(X_train, X_test, y_train, n_features):
     return X_train_selected, X_test_selected, selected_features
 
 
-def train_with_selected_features(X_train, X_test, y_train, y_test, 
-                                  method_name, n_features, dataset_name):
+def train_with_selected_features(X_train, X_test, y_train, y_test, method_name, n_features, dataset_name):
     """
     Train all models with selected features and return results.
     """
-    
     results = []
-    
+    MODELS = load_models()
     for model_name, model in MODELS.items():
         # Train
         start_time = time.time()
@@ -161,20 +147,19 @@ def run_traditional_fs(dataset_name):
     """
     Run all traditional feature selection methods.
     """
-    
-    print(f"\n{'='*50}")
+    print(f"\n{'='*60}")
     print(f"Traditional Feature Selection: {dataset_name}")
-    print(f"{'='*50}\n")
+    print(f"{'='*60}\n")
     
-    # Load data
+    # Load preprocessed splits
     splits = load_splits(dataset_name)
     X_train = splits["X_train"]
     X_test = splits["X_test"]
     y_train = splits["y_train"]
     y_test = splits["y_test"]
-    
-    print(f"Original features: {X_train.shape[1]}")
-    print(f"Training samples: {len(X_train)}\n")
+    print(f"Training samples: {len(X_train)}")
+    print(f"Test samples: {len(X_test)}")
+    print(f"Original features: {X_train.shape[1]}\n")
     
     all_results = []
     
@@ -232,27 +217,9 @@ def run_traditional_fs(dataset_name):
     results_df = pd.DataFrame(all_results)
     results_df.to_csv(results_dir / f"traditional_fs_{dataset_name}.csv", index=False)
     
-    print(f"\n{'='*50}")
+    print(f"\n{'='*60}")
     print(f"Traditional FS complete for {dataset_name}")
     print(f"Saved results to {results_dir / f'traditional_fs_{dataset_name}.csv'}")
-    print(f"{'='*50}\n")
+    print(f"{'='*60}\n")
     
     return results_df
-
-
-if __name__ == "__main__":
-    all_results = []
-    
-    for ds in DATASETS:
-        results = run_traditional_fs(ds)
-        all_results.append(results)
-    
-    # Combine results
-    combined = pd.concat(all_results, ignore_index=True)
-    combined.to_csv(COMPARISONS_DIR / "tables" / "traditional_fs_all.csv", index=False)
-    
-    print("\n" + "="*50)
-    print("ALL TRADITIONAL FEATURE SELECTION COMPLETE")
-    print("="*50)
-    print(f"\nResults summary:")
-    print(combined.groupby(['method', 'n_features'])['f1_score'].mean().to_string())
