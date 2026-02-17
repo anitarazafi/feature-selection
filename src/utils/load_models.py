@@ -11,12 +11,6 @@ MODEL_REGISTRY = {
     "xgboost": XGBClassifier
 }
 
-DEFAULT_PARAMS = {
-    "logistic_regression": {"max_iter": 1000, "random_state": 42},
-    "random_forest": {"n_estimators": 100, "random_state": 42, "n_jobs": -1},
-    "xgboost": {"random_state": 42, "n_jobs": -1, "eval_metric": "logloss"}
-}
-
 def load_models():
     """
     Load models based on config.
@@ -34,14 +28,8 @@ def load_models():
             print(f"Warning: Unknown model '{model_name}', skipping")
             continue
         
-        # Get class
         model_class = MODEL_REGISTRY[model_name]
-        
-        # Merge default params with config overrides
-        params = DEFAULT_PARAMS.get(model_name, {}).copy()
-        params.update(hyperparams.get(model_name, {}))
-        
-        # Instantiate
+        params = hyperparams.get(model_name, {})
         models[model_name] = model_class(**params)
     
     return models

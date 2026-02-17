@@ -9,12 +9,10 @@ import pickle
 from src.utils.paths import SPLITS_DIR, MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
 from src.utils.data_io import load_splits
 from src.utils.load_models import load_models
-
-# Feature selection configurations
-N_FEATURES_TO_SELECT = [10, 20, 30, 40, 50]  # Different feature counts to try
+from src.utils.load_fs_config import load_fs_config
 
 
-def correlation_based_selection(X_train, X_test, n_features):
+def correlation_based_selection(X_train, X_test, n_features, threshold):
     """
     Select features based on correlation with target and remove highly correlated features.
     Strategy:
@@ -29,9 +27,9 @@ def correlation_based_selection(X_train, X_test, n_features):
         np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
     )
     
-    # Drop features with correlation > 0.95
+    # Drop features with correlation > threshold
     to_drop = [column for column in upper_triangle.columns 
-               if any(upper_triangle[column] > 0.95)]
+               if any(upper_triangle[column] > threshold)]
     
     X_train_reduced = X_train.drop(columns=to_drop, errors='ignore')
     X_test_reduced = X_test.drop(columns=to_drop, errors='ignore')
@@ -162,17 +160,19 @@ def run_traditional_fs(dataset_name):
     print(f"Original features: {X_train.shape[1]}\n")
     
     all_results = []
-    
-    # Feature selection methods
-    fs_methods = {
-        "correlation": correlation_based_selection,
-        "variance": variance_threshold_selection,
-        "chi_square": chi_square_selection
-    }
-    
-    for method_name, fs_func in fs_methods.items():
-        print(f"\n--- {method_name.upper()} ---")
+
+    fs_config = load_fs_config()
+    N_FEATURES_TO_SELECT = fs_config['n_features_to_select']
+    traditional_config = fs_config['traditional']
+    fs_methods = ["correlation", 
+                 "variance",
+                 "chi_square"]
+
+    for method_name in fs_methods:
+        if not traditional_config[method_name].get('enabled', True):
+            continue
         
+        print(f"\n--- {method_name.upper()} ---")
         for n_features in N_FEATURES_TO_SELECT:
             if n_features >= X_train.shape[1]:
                 continue  # Skip if requesting more features than available
@@ -180,14 +180,21 @@ def run_traditional_fs(dataset_name):
             print(f"\nSelecting top {n_features} features...")
             
             # Select features
-            if method_name == "chi_square":
-                X_train_selected, X_test_selected, selected_features = fs_func(
+            if method_name == "correlation":
+                threshold = traditional_config['correlation'].get('threshold', 0.95)
+                X_train_selected, X_test_selected, selected_features = correlation_based_selection(
+                    X_train, X_test, n_features, threshold
+                )
+            elif method_name == "variance":
+                X_train_selected, X_test_selected, selected_features = variance_threshold_selection(
+                    X_train, X_test, n_features
+                )
+            elif method_name == "chi_square":
+                X_train_selected, X_test_selected, selected_features = chi_square_selection(
                     X_train, X_test, y_train, n_features
                 )
             else:
-                X_train_selected, X_test_selected, selected_features = fs_func(
-                    X_train, X_test, n_features
-                )
+                    continue
             
             print(f"Selected {len(selected_features)} features")
             
@@ -209,7 +216,7 @@ def run_traditional_fs(dataset_name):
             # Print summary for this configuration
             for r in results:
                 print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
-    
+                
     # Save all results
     results_dir = COMPARISONS_DIR / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
