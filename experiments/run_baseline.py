@@ -1,6 +1,6 @@
 import pandas as pd
 import pickle
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, classification_report
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 import time
 import json
 from pathlib import Path
@@ -39,10 +39,14 @@ def train_baseline(dataset_name):
         y_pred_proba = model.predict_proba(X_test)[:, 1]
         # Metrics
         accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         auc = roc_auc_score(y_test, y_pred_proba)
         print(f"  - Training time: {train_time:.2f}s\n")
         print(f"  - Accuracy: {accuracy:.4f}")
+        print(f"  - Precision: {precision:.4f}")
+        print(f"  - Recall: {recall:.4f}")
         print(f"  - F1 Score: {f1:.4f}")
         print(f"  - AUC: {auc:.4f}")
         # Save model
@@ -57,6 +61,8 @@ def train_baseline(dataset_name):
             "method": "baseline",
             "n_features": X_train.shape[1],
             "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
             "f1_score": f1,
             "auc": auc,
             "train_time": train_time

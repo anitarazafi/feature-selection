@@ -4,7 +4,7 @@ import pickle
 import shap
 from lime.lime_tabular import LimeTabularExplainer
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 import time
 import json
 from pathlib import Path
@@ -80,7 +80,7 @@ def lime_feature_selection(X_train, X_test, y_train, top_k):
     random_state = fs_config['common']['random_state']
     n_jobs = fs_config['common']['n_jobs']
     # Train a model for LIME analysis
-    model = RandomForestClassifier(n_estimators, random_state, n_jobs)
+    model = RandomForestClassifier(n_estimators)
     model.fit(X_train, y_train)
     
     # Create LIME explainer
@@ -162,6 +162,8 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         
         # Metrics
         accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         auc = roc_auc_score(y_test, y_pred_proba)
         
@@ -180,6 +182,8 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             "method": method_name,
             "n_features": n_features,
             "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
             "f1_score": f1,
             "auc": auc,
             "train_time": train_time

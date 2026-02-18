@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, chi2
 import time
 import json
@@ -115,6 +115,8 @@ def train_with_selected_features(X_train, X_test, y_train, y_test, method_name, 
         
         # Metrics
         accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         auc = roc_auc_score(y_test, y_pred_proba)
         
@@ -133,6 +135,8 @@ def train_with_selected_features(X_train, X_test, y_train, y_test, method_name, 
             "method": method_name,
             "n_features": n_features,
             "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
             "f1_score": f1,
             "auc": auc,
             "train_time": train_time

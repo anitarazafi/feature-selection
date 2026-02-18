@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import pickle
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 import time
 import json
 from pathlib import Path
@@ -106,6 +106,8 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         
         # Metrics
         accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred)
+        recall = recall_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         auc = roc_auc_score(y_test, y_pred_proba)
         
@@ -125,6 +127,8 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             "C": C_value,
             "n_features": n_features,
             "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
             "f1_score": f1,
             "auc": auc,
             "train_time": train_time
