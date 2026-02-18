@@ -1,28 +1,19 @@
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+import pickle
+import shap
+from lime.lime_tabular import LimeTabularExplainer
 from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 import time
 import json
 from pathlib import Path
 import warnings
+from src.utils.load_models import load_models
 warnings.filterwarnings('ignore')
-
-from src.utils.paths import SPLITS_DIR, MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
+from src.utils.load_fs_config import load_fs_config
+from src.utils.paths import MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
 from src.utils.data_io import load_splits
-
-# Datasets and models
-DATASETS = ["ibtracs.last3years"]
-MODELS = {
-    "logistic_regression": LogisticRegression(max_iter=1000, random_state=42),
-    "random_forest": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
-    "xgboost": XGBClassifier(random_state=42, n_jobs=-1, eval_metric='logloss')
-}
-
-# Number of top features to select
-TOP_K_VALUES = [10, 20, 30, 40, 50]
 
 
 def shap_feature_selection(X_train, X_test, y_train, top_k):
@@ -30,10 +21,13 @@ def shap_feature_selection(X_train, X_test, y_train, top_k):
     Use SHAP values to select top features.
     SHAP provides game-theory based feature importance.
     """
-    import shap
-    
+    fs_config = load_fs_config()
+    shap_config = fs_config['xai']['shap']
+    n_estimators = shap_config['n_estimators']
+    random_state = fs_config['common']['random_state']
+    n_jobs = fs_config['common']['n_jobs']
     # Train a model for SHAP analysis (use tree-based for speed)
-    model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    model = RandomForestClassifier(n_estimators)
     model.fit(X_train, y_train)
     
     # Calculate SHAP values
@@ -74,15 +68,19 @@ def shap_feature_selection(X_train, X_test, y_train, top_k):
     return X_train_selected, X_test_selected, selected_features, feature_importance_dict
 
 
-def lime_feature_selection(X_train, X_test, y_train, top_k, n_samples=500):
+def lime_feature_selection(X_train, X_test, y_train, top_k):
     """
     Use LIME (Local Interpretable Model-agnostic Explanations) for feature selection.
     Explains predictions locally and aggregates feature importance.
     """
-    from lime.lime_tabular import LimeTabularExplainer
-    
+    fs_config = load_fs_config()
+    lime_config = fs_config['xai']['lime']
+    n_estimators = lime_config['n_estimators']
+    n_samples = lime_config['n_samples']
+    random_state = fs_config['common']['random_state']
+    n_jobs = fs_config['common']['n_jobs']
     # Train a model for LIME analysis
-    model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    model = RandomForestClassifier(n_estimators, random_state, n_jobs)
     model.fit(X_train, y_train)
     
     # Create LIME explainer
@@ -91,7 +89,7 @@ def lime_feature_selection(X_train, X_test, y_train, top_k, n_samples=500):
         feature_names=X_train.columns.tolist(),
         class_names=['No Landfall', 'Landfall'],
         mode='classification',
-        random_state=42
+        random_state=random_state
     )
     
     # Sample instances to explain (for speed, use subset)
@@ -145,11 +143,13 @@ def lime_feature_selection(X_train, X_test, y_train, top_k, n_samples=500):
 
 def train_with_selected_features(X_train, X_test, y_train, y_test,
                                   method_name, top_k, dataset_name, selected_features):
-    """Train all models with selected features and return results."""
+    """
+    Train all models with selected features and return results.
+    """
     
     results = []
     n_features = len(selected_features)
-    
+    MODELS = load_models()
     for model_name, model in MODELS.items():
         # Train
         start_time = time.time()
@@ -169,7 +169,6 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         model_dir = MODELS_DIR / "xai_fs" / dataset_name / method_name
         model_dir.mkdir(parents=True, exist_ok=True)
         
-        import pickle
         model_filename = f"{model_name}_top{top_k}.pkl"
         with open(model_dir / model_filename, "wb") as f:
             pickle.dump(model, f)
@@ -190,114 +189,121 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
 
 
 def run_xai_fs(dataset_name):
-    """Run XAI-based feature selection methods."""
-    
+    """
+    Run XAI-based feature selection methods.
+    """
     print(f"\n{'='*60}")
     print(f"XAI-Based Feature Selection: {dataset_name}")
     print(f"{'='*60}\n")
     
-    # Load data
+    # Load preprocessed splits
     splits = load_splits(dataset_name)
     X_train = splits["X_train"]
     X_test = splits["X_test"]
     y_train = splits["y_train"]
     y_test = splits["y_test"]
-    
-    print(f"Original features: {X_train.shape[1]}")
     print(f"Training samples: {len(X_train)}\n")
+    print(f"Test samples: {len(X_test)}")
+    print(f"Original features: {X_train.shape[1]}\n")
     
     all_results = []
-    
-    # ==================== SHAP ====================
-    print(f"\n{'='*60}")
-    print("SHAP VALUES")
-    print(f"{'='*60}\n")
-    
-    for top_k in TOP_K_VALUES:
-        if top_k >= X_train.shape[1]:
-            continue
+    fs_config = load_fs_config()
+    TOP_K_VALUES = fs_config['n_features_to_select']
+    shap_config = fs_config['xai']['shap']
+    if shap_config.get('enabled', True):
+        # ==================== SHAP ====================
+        print(f"\n{'='*60}")
+        print("SHAP VALUES")
+        print(f"{'='*60}\n")
         
-        print(f"\n--- Top {top_k} features ---")
+        for top_k in TOP_K_VALUES:
+            if top_k >= X_train.shape[1]:
+                continue
+            
+            print(f"\n--- Top {top_k} features ---")
+            
+            # Select features using SHAP
+            X_train_selected, X_test_selected, selected_features, importance = shap_feature_selection(
+                X_train, X_test, y_train, top_k
+            )
+            
+            print(f"Selected {len(selected_features)} features")
+            
+            # Save selected features and importance
+            features_dir = FEATURES_DIR / dataset_name / "shap"
+            features_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get importance for selected features only
+            selected_importance = {f: float(importance[f]) for f in selected_features}
+            
+            with open(features_dir / f"selected_top{top_k}.json", "w") as f:
+                json.dump({
+                    "top_k": top_k,
+                    "n_features": len(selected_features),
+                    "selected_features": selected_features,
+                    "shap_importance": selected_importance
+                }, f, indent=2)
+            
+            # Train models and collect results
+            results = train_with_selected_features(
+                X_train_selected, X_test_selected, y_train, y_test,
+                "shap", top_k, dataset_name, selected_features
+            )
+            
+            all_results.extend(results)
+            
+            # Print summary
+            for r in results:
+                print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
         
-        # Select features using SHAP
-        X_train_selected, X_test_selected, selected_features, importance = shap_feature_selection(
-            X_train, X_test, y_train, top_k
-        )
+    lime_config = fs_config['xai']['lime']
+    if lime_config.get('enabled', True):
+
+        # ==================== LIME ====================
+        print(f"\n{'='*60}")
+        print("LIME (Local Interpretable Model-agnostic Explanations)")
+        print(f"{'='*60}\n")
         
-        print(f"Selected {len(selected_features)} features")
+        for top_k in TOP_K_VALUES:
+            if top_k >= X_train.shape[1]:
+                continue
+            
+            print(f"\n--- Top {top_k} features ---")
+            
+            # Select features using LIME
+            X_train_selected, X_test_selected, selected_features, importance = lime_feature_selection(
+                X_train, X_test, y_train, top_k
+            )
+            
+            print(f"Selected {len(selected_features)} features")
+            
+            # Save selected features and importance
+            features_dir = FEATURES_DIR / dataset_name / "lime"
+            features_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get importance for selected features only
+            selected_importance = {f: float(importance[f]) for f in selected_features}
+            
+            with open(features_dir / f"selected_top{top_k}.json", "w") as f:
+                json.dump({
+                    "top_k": top_k,
+                    "n_features": len(selected_features),
+                    "selected_features": selected_features,
+                    "lime_importance": selected_importance
+                }, f, indent=2)
+            
+            # Train models and collect results
+            results = train_with_selected_features(
+                X_train_selected, X_test_selected, y_train, y_test,
+                "lime", top_k, dataset_name, selected_features
+            )
+            
+            all_results.extend(results)
+            
+            # Print summary
+            for r in results:
+                print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
         
-        # Save selected features and importance
-        features_dir = FEATURES_DIR / dataset_name / "shap"
-        features_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Get importance for selected features only
-        selected_importance = {f: float(importance[f]) for f in selected_features}
-        
-        with open(features_dir / f"selected_top{top_k}.json", "w") as f:
-            json.dump({
-                "top_k": top_k,
-                "n_features": len(selected_features),
-                "selected_features": selected_features,
-                "shap_importance": selected_importance
-            }, f, indent=2)
-        
-        # Train models and collect results
-        results = train_with_selected_features(
-            X_train_selected, X_test_selected, y_train, y_test,
-            "shap", top_k, dataset_name, selected_features
-        )
-        
-        all_results.extend(results)
-        
-        # Print summary
-        for r in results:
-            print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
-    
-    # ==================== LIME ====================
-    print(f"\n{'='*60}")
-    print("LIME (Local Interpretable Model-agnostic Explanations)")
-    print(f"{'='*60}\n")
-    
-    for top_k in TOP_K_VALUES:
-        if top_k >= X_train.shape[1]:
-            continue
-        
-        print(f"\n--- Top {top_k} features ---")
-        
-        # Select features using LIME
-        X_train_selected, X_test_selected, selected_features, importance = lime_feature_selection(
-            X_train, X_test, y_train, top_k
-        )
-        
-        print(f"Selected {len(selected_features)} features")
-        
-        # Save selected features and importance
-        features_dir = FEATURES_DIR / dataset_name / "lime"
-        features_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Get importance for selected features only
-        selected_importance = {f: float(importance[f]) for f in selected_features}
-        
-        with open(features_dir / f"selected_top{top_k}.json", "w") as f:
-            json.dump({
-                "top_k": top_k,
-                "n_features": len(selected_features),
-                "selected_features": selected_features,
-                "lime_importance": selected_importance
-            }, f, indent=2)
-        
-        # Train models and collect results
-        results = train_with_selected_features(
-            X_train_selected, X_test_selected, y_train, y_test,
-            "lime", top_k, dataset_name, selected_features
-        )
-        
-        all_results.extend(results)
-        
-        # Print summary
-        for r in results:
-            print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
-    
     # Save all results
     results_dir = COMPARISONS_DIR / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -306,28 +312,8 @@ def run_xai_fs(dataset_name):
     results_df.to_csv(results_dir / f"xai_fs_{dataset_name}.csv", index=False)
     
     print(f"\n{'='*60}")
-    print(f"✓ XAI FS complete for {dataset_name}")
-    print(f"✓ Saved results to {results_dir / f'xai_fs_{dataset_name}.csv'}")
+    print(f"XAI FS complete for {dataset_name}")
+    print(f"Saved results to {results_dir / f'xai_fs_{dataset_name}.csv'}")
     print(f"{'='*60}\n")
     
     return results_df
-
-
-if __name__ == "__main__":
-    all_results = []
-    
-    for ds in DATASETS:
-        results = run_xai_fs(ds)
-        all_results.append(results)
-    
-    # Combine results
-    combined = pd.concat(all_results, ignore_index=True)
-    combined.to_csv(COMPARISONS_DIR / "tables" / "xai_fs_all.csv", index=False)
-    
-    print("\n" + "="*60)
-    print("ALL XAI FEATURE SELECTION COMPLETE")
-    print("="*60)
-    print(f"\nSHAP Results:")
-    print(combined[combined['method'] == 'shap'].groupby('n_features')['f1_score'].mean().to_string())
-    print(f"\nLIME Results:")
-    print(combined[combined['method'] == 'lime'].groupby('n_features')['f1_score'].mean().to_string())
