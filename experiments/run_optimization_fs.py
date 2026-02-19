@@ -210,6 +210,19 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         recall = recall_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         auc = roc_auc_score(y_test, y_pred_proba)
+
+        # Save predictions
+        pred_dir = COMPARISONS_DIR / "predictions" / model_name / dataset_name
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        predictions = {
+            "y_true": y_test.tolist(),
+            "y_pred": y_pred.tolist(),
+            "y_pred_proba": y_pred_proba.tolist(),
+            "model": model_name,
+            "n_features": X_train.shape[1]
+        }
+        with open(pred_dir / f"{model_name}_predictions.json", "w") as f:
+            json.dump(predictions, f)
         
         # Save model
         model_dir = MODELS_DIR / "optimization_fs" / dataset_name / method_name

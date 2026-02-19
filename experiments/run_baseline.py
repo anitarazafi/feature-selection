@@ -34,9 +34,11 @@ def train_baseline(dataset_name):
         start_time = time.time()
         model.fit(X_train, y_train)
         train_time = time.time() - start_time
+
         # Predictions
         y_pred = model.predict(X_test)
         y_pred_proba = model.predict_proba(X_test)[:, 1]
+
         # Metrics
         accuracy = accuracy_score(y_test, y_pred)
         precision = precision_score(y_test, y_pred)
@@ -49,11 +51,26 @@ def train_baseline(dataset_name):
         print(f"  - Recall: {recall:.4f}")
         print(f"  - F1 Score: {f1:.4f}")
         print(f"  - AUC: {auc:.4f}")
+
+        # Save predictions
+        pred_dir = COMPARISONS_DIR / "predictions" / "baseline" / dataset_name
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        predictions = {
+            "y_true": y_test.tolist(),
+            "y_pred": y_pred.tolist(),
+            "y_pred_proba": y_pred_proba.tolist(),
+            "model": model_name,
+            "n_features": X_train.shape[1]
+        }
+        with open(pred_dir / f"{model_name}_predictions.json", "w") as f:
+            json.dump(predictions, f)
+
         # Save model
         model_dir = MODELS_DIR / "baseline" / dataset_name
         model_dir.mkdir(parents=True, exist_ok=True)
         with open(model_dir / f"{model_name}.pkl", "wb") as f:
             pickle.dump(model, f)
+
         # Store results
         results.append({
             "dataset": dataset_name,
