@@ -112,7 +112,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         auc = roc_auc_score(y_test, y_pred_proba)
 
         # Save predictions
-        pred_dir = COMPARISONS_DIR / "predictions" / model_name / dataset_name
+        pred_dir = COMPARISONS_DIR / "predictions" / method_name / dataset_name
         pred_dir.mkdir(parents=True, exist_ok=True)
         predictions = {
             "y_true": y_test.tolist(),
@@ -139,12 +139,12 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             "method": method_name,
             "C": C_value,
             "n_features": n_features,
-            "accuracy": accuracy,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
-            "auc": auc,
-            "train_time": train_time
+            "accuracy": round(accuracy, 4),      
+            "precision": round(precision, 4),    
+            "recall": round(recall, 4),          
+            "f1_score": round(f1, 4),            
+            "auc": round(auc, 4),                
+            "train_time": round(train_time, 2)
         })
     
     return results

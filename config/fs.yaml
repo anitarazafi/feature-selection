@@ -42,7 +42,7 @@ optimization:
     w: 0.7 # Inertia weight
     c1: 1.5 # Cognitive parameter
     c2: 1.5 # Social parameter
-    target_n_features: [10, 20, 30] # Specific for optimization
+    target_n_features: [10, 20, 30]
   differential_evolution:
     enabled: true
     population_size: 30

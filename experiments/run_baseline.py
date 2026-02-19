@@ -77,12 +77,12 @@ def train_baseline(dataset_name):
             "model": model_name,
             "method": "baseline",
             "n_features": X_train.shape[1],
-            "accuracy": accuracy,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
-            "auc": auc,
-            "train_time": train_time
+            "accuracy": round(accuracy, 4),      
+            "precision": round(precision, 4),    
+            "recall": round(recall, 4),          
+            "f1_score": round(f1, 4),            
+            "auc": round(auc, 4),                
+            "train_time": round(train_time, 2)
         })
     
     # Save results

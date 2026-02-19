@@ -194,12 +194,12 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             "model": model_name,
             "method": method_name,
             "n_features": n_features,
-            "accuracy": accuracy,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
-            "auc": auc,
-            "train_time": train_time
+            "accuracy": round(accuracy, 4),      
+            "precision": round(precision, 4),    
+            "recall": round(recall, 4),          
+            "f1_score": round(f1, 4),            
+            "auc": round(auc, 4),                
+            "train_time": round(train_time, 2)
         })
     
     return results
