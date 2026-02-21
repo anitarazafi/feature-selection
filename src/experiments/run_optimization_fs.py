@@ -6,13 +6,12 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_s
 from sklearn.model_selection import cross_val_score
 import time
 import json
-from pathlib import Path
 import random
 import warnings
 from src.utils.load_models import load_models
 warnings.filterwarnings('ignore')
 from src.utils.load_fs_config import load_fs_config
-from src.utils.paths import MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
+from src.utils.paths import RESULTS_DIR
 from src.utils.data_io import load_splits
 
 def evaluate_feature_subset(X_train, y_train, feature_indices):
@@ -212,7 +211,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         auc = roc_auc_score(y_test, y_pred_proba)
 
         # Save predictions
-        pred_dir = COMPARISONS_DIR / "predictions" / model_name / dataset_name
+        pred_dir = RESULTS_DIR / dataset_name / "predictions" / method_name
         pred_dir.mkdir(parents=True, exist_ok=True)
         predictions = {
             "y_true": y_test.tolist(),
@@ -225,7 +224,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             json.dump(predictions, f)
         
         # Save model
-        model_dir = MODELS_DIR / "optimization_fs" / dataset_name / method_name
+        model_dir = RESULTS_DIR / dataset_name / "models" / method_name
         model_dir.mkdir(parents=True, exist_ok=True)
         
         model_filename = f"{model_name}_k{n_features}.pkl"
@@ -294,7 +293,7 @@ def run_optimization_fs(dataset_name):
             print(f"  Selection completed in {selection_time:.2f}s")
             
             # Save selected features
-            features_dir = FEATURES_DIR / dataset_name / "pso"
+            features_dir = RESULTS_DIR / dataset_name / "features" / "pso"
             features_dir.mkdir(parents=True, exist_ok=True)
             
             with open(features_dir / f"selected_k{n_features}.json", "w") as f:
@@ -339,7 +338,7 @@ def run_optimization_fs(dataset_name):
             print(f"  Selection completed in {selection_time:.2f}s")
             
             # Save selected features
-            features_dir = FEATURES_DIR / dataset_name / "differential_evolution"
+            features_dir = RESULTS_DIR / dataset_name / "features" / "differential_evolution"
             features_dir.mkdir(parents=True, exist_ok=True)
             
             with open(features_dir / f"selected_k{n_features}.json", "w") as f:
@@ -362,15 +361,14 @@ def run_optimization_fs(dataset_name):
                 print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
         
     # Save all results
-    results_dir = COMPARISONS_DIR / "tables"
+    results_dir = RESULTS_DIR / dataset_name / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
-    
     results_df = pd.DataFrame(all_results)
-    results_df.to_csv(results_dir / f"optimization_fs_{dataset_name}.csv", index=False)
+    results_df.to_csv(results_dir / f"optimization_fs.csv", index=False)
     
     print(f"\n{'='*60}")
     print(f"Optimization FS complete for {dataset_name}")
-    print(f"Saved results to {results_dir / f'optimization_fs_{dataset_name}.csv'}")
+    print(f"Saved results to {results_dir / f'optimization_fs.csv'}")
     print(f"{'='*60}\n")
     
     return results_df

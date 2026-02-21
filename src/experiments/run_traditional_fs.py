@@ -1,12 +1,11 @@
 import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
-from sklearn.feature_selection import VarianceThreshold, SelectKBest, chi2
+from sklearn.feature_selection import SelectKBest, chi2
 import time
 import json
-from pathlib import Path
 import pickle
-from src.utils.paths import SPLITS_DIR, MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
+from src.utils.paths import RESULTS_DIR
 from src.utils.data_io import load_splits
 from src.utils.load_models import load_models
 from src.utils.load_fs_config import load_fs_config
@@ -124,7 +123,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test, method_name, 
         auc = roc_auc_score(y_test, y_pred_proba)
 
         # Save predictions
-        pred_dir = COMPARISONS_DIR / "predictions" / method_name / dataset_name
+        pred_dir = RESULTS_DIR / dataset_name / "predictions" / method_name
         pred_dir.mkdir(parents=True, exist_ok=True)
         predictions = {
             "y_true": y_test.tolist(),
@@ -137,7 +136,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test, method_name, 
             json.dump(predictions, f)
         
         # Save model
-        model_dir = MODELS_DIR / "traditional_fs" / dataset_name / method_name
+        model_dir = RESULTS_DIR / dataset_name / "models" / method_name
         model_dir.mkdir(parents=True, exist_ok=True)
         
         model_filename = f"{model_name}_k{n_features}.pkl"
@@ -219,7 +218,7 @@ def run_traditional_fs(dataset_name):
             print(f"Selected {len(selected_features)} features")
             
             # Save selected features
-            features_dir = FEATURES_DIR / dataset_name / method_name
+            features_dir = RESULTS_DIR / dataset_name / "features" / method_name
             features_dir.mkdir(parents=True, exist_ok=True)
             
             with open(features_dir / f"selected_k{n_features}.json", "w") as f:
@@ -238,15 +237,14 @@ def run_traditional_fs(dataset_name):
                 print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
                 
     # Save all results
-    results_dir = COMPARISONS_DIR / "tables"
+    results_dir = RESULTS_DIR / dataset_name / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
-    
     results_df = pd.DataFrame(all_results)
-    results_df.to_csv(results_dir / f"traditional_fs_{dataset_name}.csv", index=False)
+    results_df.to_csv(results_dir / f"traditional_fs.csv", index=False)
     
     print(f"\n{'='*60}")
     print(f"Traditional FS complete for {dataset_name}")
-    print(f"Saved results to {results_dir / f'traditional_fs_{dataset_name}.csv'}")
+    print(f"Saved results to {results_dir / f'traditional_fs.csv'}")
     print(f"{'='*60}\n")
     
     return results_df

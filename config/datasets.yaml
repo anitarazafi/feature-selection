@@ -10,3 +10,16 @@ ibtracs.last3years:
   features:
     datetime:
       - ISO_TIME
+
+ibtracs.ALL:
+  paths:
+    raw: data/raw/ibtracs.last3years.csv
+    processed: data/processed/ibtracs.last3years/
+  target: LANDFALL
+  target_transform: binary_landfall
+  preprocessing:
+    missing_values: median
+    encoding: onehot
+  features:
+    datetime:
+      - ISO_TIME

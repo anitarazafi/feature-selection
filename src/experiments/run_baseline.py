@@ -4,7 +4,7 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_s
 import time
 import json
 from pathlib import Path
-from src.utils.paths import MODELS_DIR, COMPARISONS_DIR
+from src.utils.paths import RESULTS_DIR
 from src.utils.data_io import load_splits
 from src.utils.load_models import load_models
 
@@ -53,7 +53,7 @@ def train_baseline(dataset_name):
         print(f"  - AUC: {auc:.4f}")
 
         # Save predictions
-        pred_dir = COMPARISONS_DIR / "predictions" / "baseline" / dataset_name
+        pred_dir = RESULTS_DIR / dataset_name / "predictions" / "baseline"
         pred_dir.mkdir(parents=True, exist_ok=True)
         predictions = {
             "y_true": y_test.tolist(),
@@ -66,7 +66,7 @@ def train_baseline(dataset_name):
             json.dump(predictions, f)
 
         # Save model
-        model_dir = MODELS_DIR / "baseline" / dataset_name
+        model_dir = RESULTS_DIR / dataset_name / "models" / "baseline"
         model_dir.mkdir(parents=True, exist_ok=True)
         with open(model_dir / f"{model_name}.pkl", "wb") as f:
             pickle.dump(model, f)
@@ -86,11 +86,11 @@ def train_baseline(dataset_name):
         })
     
     # Save results
-    results_dir = COMPARISONS_DIR / "tables"
+    results_dir = RESULTS_DIR / dataset_name / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
     results_df = pd.DataFrame(results)
-    results_df.to_csv(results_dir / f"baseline_{dataset_name}.csv", index=False)
-    print(f"\nSaved results to {results_dir / f'baseline_{dataset_name}.csv'}")
-    print(f"Saved models to {MODELS_DIR / 'baseline' / dataset_name}\n")
+    results_df.to_csv(results_dir / f"baseline.csv", index=False)
+    print(f"\nSaved results to {results_dir / f'baseline.csv'}")
+    print(f"Saved models to {RESULTS_DIR / dataset_name / 'models' / 'baseline'}\n")
     
     return results_df

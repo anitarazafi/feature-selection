@@ -5,10 +5,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 import time
 import json
-from pathlib import Path
 from src.utils.load_fs_config import load_fs_config
 from src.utils.load_models import load_models
-from src.utils.paths import MODELS_DIR, FEATURES_DIR, COMPARISONS_DIR
+from src.utils.paths import RESULTS_DIR
 from src.utils.data_io import load_splits
 
 def l1_feature_selection(X_train, X_test, y_train, C):
@@ -63,7 +62,7 @@ def l2_feature_selection(X_train, X_test, y_train, C, top_k=30):
     max_iter = l1_config['max_iter']
     random_state = fs_config['common']['random_state']
 
-    # Train L2 logistic regression (NEW syntax)
+    # Train L2 logistic regression
     l2_model = LogisticRegression(
         l1_ratio=0.0,  # 0.0 = pure L2 (Ridge)
         solver=solver,  # saga supports l1_ratio
@@ -112,7 +111,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
         auc = roc_auc_score(y_test, y_pred_proba)
 
         # Save predictions
-        pred_dir = COMPARISONS_DIR / "predictions" / method_name / dataset_name
+        pred_dir = RESULTS_DIR / dataset_name / "predictions" / method_name
         pred_dir.mkdir(parents=True, exist_ok=True)
         predictions = {
             "y_true": y_test.tolist(),
@@ -125,7 +124,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             json.dump(predictions, f)
         
         # Save model
-        model_dir = MODELS_DIR / "embedded_fs" / dataset_name / method_name
+        model_dir = RESULTS_DIR / dataset_name / "models" / method_name
         model_dir.mkdir(parents=True, exist_ok=True)
         
         model_filename = f"{model_name}_C{C_value}.pkl"
@@ -192,7 +191,7 @@ def run_embedded_fs(dataset_name):
             print(f"Selected {n_features} features with non-zero coefficients")
             
             # Save selected features and coefficients
-            features_dir = FEATURES_DIR / dataset_name / "l1_lasso"
+            features_dir = RESULTS_DIR / dataset_name / "features" / "l1_lasso"
             features_dir.mkdir(parents=True, exist_ok=True)
             
             feature_importance = {
@@ -224,9 +223,6 @@ def run_embedded_fs(dataset_name):
     l2_config = fs_config['embedded']['l2_ridge']
     if l2_config.get('enabled', True):
         TOP_K_VALUES = fs_config['n_features_to_select']
-        solver = l2_config['solver']
-        c = l2_config['C']
-        max_iter = l2_config['max_iter']
         # ==================== L2 (RIDGE) ====================
         print(f"\n{'='*60}")
         print("L2 REGULARIZATION (RIDGE)")
@@ -247,7 +243,7 @@ def run_embedded_fs(dataset_name):
             print(f"Selected {n_features} features")
             
             # Save selected features and coefficients
-            features_dir = FEATURES_DIR / dataset_name / "l2_ridge"
+            features_dir = RESULTS_DIR / dataset_name / "features" / "l2_ridge"
             features_dir.mkdir(parents=True, exist_ok=True)
             
             feature_importance = {
@@ -282,15 +278,14 @@ def run_embedded_fs(dataset_name):
                 print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
         
     # Save all results
-    results_dir = COMPARISONS_DIR / "tables"
+    results_dir = RESULTS_DIR / dataset_name / "tables"
     results_dir.mkdir(parents=True, exist_ok=True)
-    
     results_df = pd.DataFrame(all_results)
-    results_df.to_csv(results_dir / f"embedded_fs_{dataset_name}.csv", index=False)
+    results_df.to_csv(results_dir / f"embedded_fs.csv", index=False)
     
     print(f"\n{'='*60}")
     print(f"Embedded FS complete for {dataset_name}")
-    print(f"Saved results to {results_dir / f'embedded_fs_{dataset_name}.csv'}")
+    print(f"Saved results to {results_dir / f'embedded_fs.csv'}")
     print(f"{'='*60}\n")
     
     return results_df
