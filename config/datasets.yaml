@@ -11,10 +11,10 @@ ibtracs.last3years:
     datetime:
       - ISO_TIME
 
-ibtracs.ALL:
+ibtracs.ALL.list.v04r01:
   paths:
-    raw: data/raw/ibtracs.last3years.csv
-    processed: data/processed/ibtracs.last3years/
+    raw: data/raw/ibtracs.ALL.list.v04r01.csv
+    processed: data/processed/ibtracs.ALL.list.v04r01/
   target: LANDFALL
   target_transform: binary_landfall
   preprocessing:
