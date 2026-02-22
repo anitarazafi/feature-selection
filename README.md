@@ -10,14 +10,19 @@ Machine Learning project comparing several Feature Selection methods
 
 ## Local development:
 `python3 -m venv venv`
+
 `source venv/bin/activate`
+
 `pip install -r requirements.txt`
+
 `jupyter lab`
 
 ## Colab:
 - Clone repository:
 `!git clone https://github.com/anitarazafi/feature-selection.git`
+
 `%cd feature-selection`
+
 - Install dependencies:
 ```
 import os
