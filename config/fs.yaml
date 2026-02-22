@@ -29,10 +29,12 @@ xai:
   shap:
     enabled: true
     n_estimators: 100
+    max_samples: 10000
   lime:
     enabled: true
     n_samples: 500
     n_estimators: 100
+    max_samples: 10000
 
 optimization:
   pso:

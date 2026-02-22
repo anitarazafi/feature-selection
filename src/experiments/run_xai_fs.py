@@ -23,16 +23,25 @@ def shap_feature_selection(X_train, X_test, y_train, top_k):
     fs_config = load_fs_config()
     shap_config = fs_config['xai']['shap']
     n_estimators = shap_config['n_estimators']
-    random_state = fs_config['common']['random_state']
-    n_jobs = fs_config['common']['n_jobs']
+    max_samples = shap_config['max_samples']
+    if len(X_train) > max_samples:
+        sample_idx = np.random.choice(len(X_train), max_samples, replace=False)
+        X_shap = X_train.iloc[sample_idx]
+        y_shap = y_train.iloc[sample_idx]
+    else:
+        X_shap = X_train
+        y_shap = y_train
+
     # Train a model for SHAP analysis (use tree-based for speed)
     model = RandomForestClassifier(n_estimators)
-    model.fit(X_train, y_train)
+    #model.fit(X_train, y_train)
+    model.fit(X_shap, y_shap) # train on subset for speed
     
     # Calculate SHAP values
     # Use TreeExplainer for tree-based models (faster)
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X_train)
+    #shap_values = explainer.shap_values(X_train)
+    shap_values = explainer.shap_values(X_shap) # compute on subset for speed
     
     # For binary classification, shap_values might be a list or 2D array
     if isinstance(shap_values, list):
@@ -76,16 +85,25 @@ def lime_feature_selection(X_train, X_test, y_train, top_k):
     lime_config = fs_config['xai']['lime']
     n_estimators = lime_config['n_estimators']
     n_samples = lime_config['n_samples']
+    max_samples = lime_config['max_samples']
     random_state = fs_config['common']['random_state']
-    n_jobs = fs_config['common']['n_jobs']
+    if len(X_train) > max_samples:
+        sample_idx = np.random.choice(len(X_train), max_samples, replace=False)
+        X_lime = X_train.iloc[sample_idx]
+        y_lime = y_train.iloc[sample_idx]
+    else:
+        X_lime = X_train
+        y_lime = y_train
+
     # Train a model for LIME analysis
     model = RandomForestClassifier(n_estimators)
-    model.fit(X_train, y_train)
+    #model.fit(X_train, y_train)
+    model.fit(X_lime, y_lime) # train on subset for speed
     
-    # Create LIME explainer
+    # Create LIME explainer on subset
     explainer = LimeTabularExplainer(
-        X_train.values,
-        feature_names=X_train.columns.tolist(),
+        X_lime.values,
+        feature_names=X_lime.columns.tolist(),
         class_names=['No Landfall', 'Landfall'],
         mode='classification',
         random_state=random_state
