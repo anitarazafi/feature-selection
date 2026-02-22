@@ -27,6 +27,8 @@ def train_baseline(dataset_name):
     print(f"Features: {X_train.shape[1]}\n")
     results = []
 
+    n_features = X_train.shape[1]
+
     MODELS = load_models()
     for model_name, model in MODELS.items():
         print(f"Training {model_name}...")
@@ -62,7 +64,7 @@ def train_baseline(dataset_name):
             "model": model_name,
             "n_features": X_train.shape[1]
         }
-        with open(pred_dir / f"{model_name}_predictions.json", "w") as f:
+        with open(pred_dir / f"{model_name}_n{n_features}_predictions.json", "w") as f:
             json.dump(predictions, f)
 
         # Save model

@@ -176,7 +176,7 @@ def train_with_selected_features(X_train, X_test, y_train, y_test,
             "model": model_name,
             "n_features": X_train.shape[1]
         }
-        with open(pred_dir / f"{model_name}_predictions.json", "w") as f:
+        with open(pred_dir / f"{model_name}_n{n_features}_predictions.json", "w") as f:
             json.dump(predictions, f)
         
         # Save model
