@@ -1,42 +1,56 @@
 import pandas as pd
 import numpy as np
 
-VALID_CATEGORIES = {
-    "BASIN": {"NA", "EP", "WP", "NI", "SI", "SP", "SA"},
-    "SUBBASIN": {"CS", "GM", "CP", "BB", "AS", "WA", "EA"},
-    "NATURE": {"DS", "TS", "ET", "SS", "NR", "MX"},
-    "WMO_AGENCY": {"bom", "nadi", "wellington", "reunion", "newdelhi", "tokyo", "hurdat_epa", "hurdat_atl", "atcf"},
-    "TRACK_TYPE": {"main", "spur", "provisional", "us-provisional", "us-provisional_spur"},
-    "USA_AGENCY": {"hurdat_atl", "hurdat_epa", "atcf", "jtwc_wp", "jtwc_io", "jtwc_ep", "jtwc_cp", "jtwc_sh", "cphc"},
-    "USA_RECORD": {"C", "G", "I", "L", "P", "R", "S", "T", "W"},
-    "USA_STATUS": {"DB", "TD", "TS", "TY", "ST", "TC", "HU", "HR", "SD", "SS", "EX", "PT", "IN", "DS", "LO", "WV", "ET", "MD", "XX"},
-    "NEWDELHI_GRADE": {"D", "DD", "CS", "SCS", "VSCS", "SCS"},
-    "MLC_CLASS": {"EX", "HU", "LO", "MH", "SD", "SS", "TD", "TS", "TW", "WV"},
-    "HKO_CAT": {"LW", "TD", "TS", "STS", "T", "ST", "SuperT"},
-    "KMA_CAT": {"TD", "TS", "STS", "TY", "L"}
-}
-
-
 GENERIC_MISSING = [None, "", " "]
-
 
 def normalize_missing_values(df):
     """
     Transform missing values to standart nan
     """
+    print(f"\n{'='*60}")
+    print(f"= Normalizing missing values")
     df = df.copy()
     obj_cols = df.select_dtypes(include="object").columns
     df[obj_cols] = df[obj_cols].replace(GENERIC_MISSING, np.nan)
     return df
 
+def drop_high_missing_columns(df, threshold=0.6):
+    """
+    Drop columns with missing values above threshold.
+    """
+    # Calculate missing percentage
+    missing_pct = df.isna().sum() / len(df)
+    
+    # Find columns above threshold
+    high_missing = missing_pct[missing_pct > threshold]
+    
+    if len(high_missing) > 0:
+        print(f"\n{'='*60}")
+        print(f"= Dropping high missing value columuns (> {threshold*100:.0f}%)")
+        print(f"Dropping {len(high_missing)} columns:")
+        for col, pct in high_missing.items():
+            print(f"  - {col:40s} : {pct*100:.1f}% missing")
+        print(f"Columns: {len(df.columns)} -> {len(df.columns) - len(high_missing)}")
+        print(f"{'='*60}\n")
+    else:
+        print(f"\n{'='*60}")
+        print(f"No columns with > {threshold*100:.0f}% missing values\n")
+    
+    # Drop columns
+    df_cleaned = df.drop(columns=high_missing.index.tolist())
+    #dropped_info = [(col, pct) for col, pct in high_missing.items()]
+    
+    return df_cleaned
 
 def correct_dtypes(df, cfg):
     """
     Correct column data types
     """
+    print(f"\n{'='*60}")
+    print(f"= Correcting column data types")
     df = df.copy()
     # datetime columns
-    datetime_cols = cfg.get("datetime", [])
+    datetime_cols = cfg.get("features", {}).get("datetime", [])
     for col in datetime_cols:
         if col in df.columns:
             df[col] = pd.to_datetime(
@@ -55,7 +69,11 @@ def correct_dtypes(df, cfg):
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # categorical columns
-    for col, valid_set in VALID_CATEGORIES.items():
+    valid_categories = {
+        col: set(vals)
+        for col, vals in cfg.get("features", {}).get("valid_categories", {}).items()
+    }
+    for col, valid_set in valid_categories.items():
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
             df.loc[~df[col].isin(valid_set), col] = np.nan
@@ -74,49 +92,26 @@ def handle_missing(df, strategy="mean"):
     - "drop"   : drop rows with any missing values
     """
     if strategy == "drop":
+        print(f"\n{'='*60}")
+        print(f"= Dropping missing values")
         return df.dropna()
 
     df = df.copy()
     if strategy in ["mean", "median"]:
+        print(f"\n{'='*60}")
+        print(f"= Replacing missing values with {strategy}")
         num_cols = df.select_dtypes(include="number").columns
         for col in num_cols:
             value = df[col].mean() if strategy == "mean" else df[col].median()
             df[col] = df[col].fillna(value)
     
     if strategy == "most_frequent":
+        print(f"\n{'='*60}")
+        print(f"= Replacing missing values with {strategy}")
         for col in df.columns:
             df[col] = df[col].fillna(df[col].mode()[0])
 
     return df
-    
-
-def drop_high_missing_columns(df, threshold=0.6):
-    """
-    Drop columns with missing values above threshold.
-    """
-    # Calculate missing percentage
-    missing_pct = df.isna().sum() / len(df)
-    
-    # Find columns above threshold
-    high_missing = missing_pct[missing_pct > threshold]
-    
-    if len(high_missing) > 0:
-        print(f"\n{'='*60}")
-        print(f"DROPPING HIGH MISSING VALUE COLUMNS (> {threshold*100:.0f}%)")
-        print(f"{'='*60}")
-        print(f"Dropping {len(high_missing)} columns:")
-        for col, pct in high_missing.items():
-            print(f"  - {col:40s} : {pct*100:.1f}% missing")
-        print(f"Columns: {len(df.columns)} -> {len(df.columns) - len(high_missing)}")
-        print(f"{'='*60}\n")
-    else:
-        print(f"\nNo columns with > {threshold*100:.0f}% missing values\n")
-    
-    # Drop columns
-    df_cleaned = df.drop(columns=high_missing.index.tolist())
-    dropped_info = [(col, pct) for col, pct in high_missing.items()]
-    
-    return df_cleaned, dropped_info
 
 
 def remove_target_leakage(X, y, threshold=0.9):
@@ -134,7 +129,7 @@ def remove_target_leakage(X, y, threshold=0.9):
     
     if leaky_features:
         print(f"\n{'='*60}")
-        print(f"REMOVING TARGET LEAKAGE (correlation > {threshold})")
+        print(f"= Removing target leakage (correlation > {threshold})")
         print(f"{'='*60}")
         print(f"Removing {len(leaky_features)} features:")
         for feat in leaky_features:
@@ -142,9 +137,10 @@ def remove_target_leakage(X, y, threshold=0.9):
             print(f"  - {feat:30s} : r = {corr_value:.4f}")
         print(f"{'='*60}\n")
     else:
-        print(f"\n✓ No features with correlation > {threshold}\n")
+        print(f"\n{'='*60}")
+        print(f"= No features with correlation > {threshold}\n")
     
     # Remove leaky features from entire dataframe (including non-numeric)
     X_cleaned = X.drop(columns=leaky_features, errors='ignore')
     
-    return X_cleaned, leaky_features
+    return X_cleaned

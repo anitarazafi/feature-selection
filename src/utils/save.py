@@ -1,18 +1,20 @@
 import pandas as pd
-from pathlib import Path
 import pickle
-from src.utils.paths import BASE_DIR, PREPROCESSED_DATA_DIR
+from src.utils.paths import BASE_DIR
 
-def save_processed(X, y, dataset_name):
-    out_dir = PREPROCESSED_DATA_DIR / dataset_name
+def save_processed(X, y, cfg):
+    processed_rel = cfg["paths"]["processed"]
+    out_dir = BASE_DIR / processed_rel
     out_dir.mkdir(parents=True, exist_ok=True)
     X.to_csv(out_dir / "X.csv", index=False)
     y.to_csv(out_dir / "y.csv", index=False)
-    print(f"Saved processed for {dataset_name} to {out_dir}")
+    print(f"\n{'='*60}")
+    print(f"=Saved processed to {out_dir}")
 
 
-def save_data_summary(X, y, dataset_name):
-    out_dir = PREPROCESSED_DATA_DIR / dataset_name
+def save_data_summary(X, y, cfg):
+    processed_rel = cfg["paths"]["processed"]
+    out_dir = BASE_DIR / processed_rel
     out_dir.mkdir(parents=True, exist_ok=True)
     summary = {
         "n_samples": len(X),
@@ -24,11 +26,13 @@ def save_data_summary(X, y, dataset_name):
     }
 
     pd.Series(summary).to_json(out_dir / "data_summary.json", indent=2)
-    print(f"Saved summary for {dataset_name} to {out_dir}")
+    print(f"\n{'='*60}")
+    print(f"=Saved summary to {out_dir}")
     
 
-def save_splits(splits, dataset_name, encoder=None, scaler=None):
-    out_dir = BASE_DIR / "data" / "splits" / dataset_name
+def save_splits(splits, cfg, encoder=None, scaler=None):
+    processed_rel = cfg["paths"]["splits"]
+    out_dir = BASE_DIR / processed_rel
     out_dir.mkdir(parents=True, exist_ok=True)
     # Save data splits as CSV
     for name, df in splits.items():
@@ -44,5 +48,6 @@ def save_splits(splits, dataset_name, encoder=None, scaler=None):
         with open(out_dir / "scaler.pkl", "wb") as f:
             pickle.dump(scaler, f)
     
-    print(f"Saved splits for {dataset_name} to {out_dir}")
+    print(f"\n{'='*60}")
+    print(f"=Saved splits for to {out_dir}")
     

@@ -2,24 +2,148 @@ ibtracs.last3years:
   paths:
     raw: data/raw/ibtracs.last3years.csv
     processed: data/processed/ibtracs.last3years/
+    splits: data/splits/ibtracs.last3years/
   target: LANDFALL
   target_transform: binary_landfall
   preprocessing:
-    missing_values: median
-    encoding: onehot
+    remove_first_row: true
+    remove_high_missing_values_columns: true
+    high_missing_values_threshold: 0.6
+    drop_duplicates: true
+    missing_values_strategy: median
   features:
+    sort_by: ISO_TIME
     datetime:
       - ISO_TIME
+    valid_categories:
+      BASIN: ["NA", "EP", "WP", "NI", "SI", "SP", "SA"]
+      SUBBASIN": ["CS", "GM", "CP", "BB", "AS", "WA", "EA"]
+      NATURE: ["DS", "TS", "ET", "SS", "NR", "MX"]
+      WMO_AGENCY:
+        [
+          "bom",
+          "nadi",
+          "wellington",
+          "reunion",
+          "newdelhi",
+          "tokyo",
+          "hurdat_epa",
+          "hurdat_atl",
+          "atcf",
+        ]
+      TRACK_TYPE:
+        ["main", "spur", "provisional", "us-provisional", "us-provisional_spur"]
+      USA_AGENCY:
+        [
+          "hurdat_atl",
+          "hurdat_epa",
+          "atcf",
+          "jtwc_wp",
+          "jtwc_io",
+          "jtwc_ep",
+          "jtwc_cp",
+          "jtwc_sh",
+          "cphc",
+        ]
+      USA_RECORD: ["C", "G", "I", "L", "P", "R", "S", "T", "W"]
+      USA_STATUS:
+        [
+          "DB",
+          "TD",
+          "TS",
+          "TY",
+          "ST",
+          "TC",
+          "HU",
+          "HR",
+          "SD",
+          "SS",
+          "EX",
+          "PT",
+          "IN",
+          "DS",
+          "LO",
+          "WV",
+          "ET",
+          "MD",
+          "XX",
+        ]
+      NEWDELHI_GRADE: ["D", "DD", "CS", "SCS", "VSCS", "SCS"]
+      MLC_CLASS: ["EX", "HU", "LO", "MH", "SD", "SS", "TD", "TS", "TW", "WV"]
+      HKO_CAT: ["LW", "TD", "TS", "STS", "T", "ST", "SuperT"]
+      KMA_CAT: ["TD", "TS", "STS", "TY", "L"]
 
 ibtracs.ALL.list.v04r01:
   paths:
     raw: data/raw/ibtracs.ALL.list.v04r01.csv
     processed: data/processed/ibtracs.ALL.list.v04r01/
+    splits: data/splits/ibtracs.ALL.list.v04r01/
   target: LANDFALL
   target_transform: binary_landfall
   preprocessing:
-    missing_values: median
-    encoding: onehot
+    remove_first_row: true
+    remove_high_missing_values_columns: true
+    high_missing_values_threshold: 0.6
+    drop_duplicates: true
+    missing_values_strategy: median
   features:
+    sort_by: ISO_TIME
     datetime:
       - ISO_TIME
+    valid_categories:
+      BASIN: ["NA", "EP", "WP", "NI", "SI", "SP", "SA"]
+      SUBBASIN": ["CS", "GM", "CP", "BB", "AS", "WA", "EA"]
+      NATURE: ["DS", "TS", "ET", "SS", "NR", "MX"]
+      WMO_AGENCY:
+        [
+          "bom",
+          "nadi",
+          "wellington",
+          "reunion",
+          "newdelhi",
+          "tokyo",
+          "hurdat_epa",
+          "hurdat_atl",
+          "atcf",
+        ]
+      TRACK_TYPE:
+        ["main", "spur", "provisional", "us-provisional", "us-provisional_spur"]
+      USA_AGENCY:
+        [
+          "hurdat_atl",
+          "hurdat_epa",
+          "atcf",
+          "jtwc_wp",
+          "jtwc_io",
+          "jtwc_ep",
+          "jtwc_cp",
+          "jtwc_sh",
+          "cphc",
+        ]
+      USA_RECORD: ["C", "G", "I", "L", "P", "R", "S", "T", "W"]
+      USA_STATUS:
+        [
+          "DB",
+          "TD",
+          "TS",
+          "TY",
+          "ST",
+          "TC",
+          "HU",
+          "HR",
+          "SD",
+          "SS",
+          "EX",
+          "PT",
+          "IN",
+          "DS",
+          "LO",
+          "WV",
+          "ET",
+          "MD",
+          "XX",
+        ]
+      NEWDELHI_GRADE: ["D", "DD", "CS", "SCS", "VSCS", "SCS"]
+      MLC_CLASS: ["EX", "HU", "LO", "MH", "SD", "SS", "TD", "TS", "TW", "WV"]
+      HKO_CAT: ["LW", "TD", "TS", "STS", "T", "ST", "SuperT"]
+      KMA_CAT: ["TD", "TS", "STS", "TY", "L"]

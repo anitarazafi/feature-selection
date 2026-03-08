@@ -1,6 +1,6 @@
 import pandas as pd
 
-def transform_target(y_raw, cfg, dataset_name):
+def transform_target(y_raw, cfg):
     """
     Transform target variable based on dataset-specific requirements.
     Parameters:
@@ -13,6 +13,8 @@ def transform_target(y_raw, cfg, dataset_name):
     transform_type = cfg.get("target_transform")
     
     if transform_type == "binary_landfall":
+        print(f"\n{'='*60}")
+        print(f"= Transforming target column to binary")
         # Convert to numeric and create binary target
         y_raw = pd.to_numeric(y_raw, errors="coerce")
         y = (y_raw == 0).astype(int)

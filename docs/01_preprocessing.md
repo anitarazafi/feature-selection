@@ -5,6 +5,7 @@
     - Load dataset and configuration
     - Preprocess raw data:
       - Remove the first row which is not valid
+      - Normalize missing values
       - Drop columns if missing values is more than 60% 
       - Correct data types (datetime: ISO_TIME, numerical values, and valid sets for categorical values)
       - Sort dataframe by ISO_TIME (chronological order)
