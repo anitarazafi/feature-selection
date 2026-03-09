@@ -4,6 +4,7 @@
 - For each dataset:
     - Load dataset and configuration
     - Preprocess raw data:
+      - Filter out rows and take only data from 1980 where the satellite era started to emerge
       - Remove the first row which is not valid
       - Normalize missing values
       - Drop columns if missing values is more than 60% 
@@ -15,16 +16,17 @@
     - Generate the binary target column based on the numeric target column
     - Save preprocessed data (X.csv, y.csv) to data/preprocessed/
     - Save data summary (JSON) to data/summaries/ for visualization
-    - Split data temporally (80% train, 20% test):
+    - Split data temporally (70% train, 10% validation, 20% test):
           - Respect time order: use past data (train) to predict future (test)
-          - Train split: first 80% of chronologically sorted data
+          - Train split: first 70% of chronologically sorted data
+          - Validation split: next 10% of sorted data
           - Test split: last 20% of chronologically sorted data
     - Encode categorical features:
           - Fit OneHotEncoder on training data only
-          - Transform both training and test data using fitted encoder
+          - Transform training, validation and test data using fitted encoder
           - Handle unknown categories in test set with 'ignore' strategy
     - Scale numerical features:
           - Fit StandardScaler on training data only
-          - Transform both training and test data using fitted scaler
-    - Save final splits (X_train.csv, X_test.csv, y_train.csv, y_test.csv) to data/.../splits/
+          - Transform training, validation and test data using fitted scaler
+    - Save final splits (X_train.csv, X_val.csv, X_test.csv, y_train.csv, y_val.csv, y_test.csv) to data/.../splits/
     - Save encoder and scaler objects (encoder.pkl, scaler.pkl) to data/.../splits/ for reproducibility

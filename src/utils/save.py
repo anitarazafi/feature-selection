@@ -31,8 +31,8 @@ def save_data_summary(X, y, cfg):
     
 
 def save_splits(splits, cfg, encoder=None, scaler=None):
-    processed_rel = cfg["paths"]["splits"]
-    out_dir = BASE_DIR / processed_rel
+    splits_rel = cfg["paths"]["splits"]
+    out_dir = BASE_DIR / splits_rel
     out_dir.mkdir(parents=True, exist_ok=True)
     # Save data splits as CSV
     for name, df in splits.items():

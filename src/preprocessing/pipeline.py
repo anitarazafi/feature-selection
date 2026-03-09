@@ -1,9 +1,15 @@
 from src.preprocessing.clean import normalize_missing_values, correct_dtypes, handle_missing, drop_high_missing_columns, remove_target_leakage
+import pandas as pd
 
 def preprocess(df, cfg):
     remove_first_line = cfg["preprocessing"]["remove_first_row"]
     if remove_first_line:
         df = df.iloc[1:].reset_index(drop=True) # drop duplicated header/metadata row
+
+    year_from = cfg.get("preprocessing", {}).get("filter_year_from")
+    if year_from:
+        df = df[pd.to_datetime(df["ISO_TIME"]).dt.year >= year_from]
+        print(f"Filtered to post-{year_from}: {len(df)} rows remaining")
 
     df = normalize_missing_values(df)
 

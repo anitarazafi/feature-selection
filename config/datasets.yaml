@@ -3,6 +3,7 @@ ibtracs.last3years:
     raw: data/raw/ibtracs.last3years.csv
     processed: data/processed/ibtracs.last3years/
     splits: data/splits/ibtracs.last3years/
+    results: results/ibtracs.last3years/
   target: LANDFALL
   target_transform: binary_landfall
   preprocessing:
@@ -11,6 +12,7 @@ ibtracs.last3years:
     high_missing_values_threshold: 0.6
     drop_duplicates: true
     missing_values_strategy: median
+    filter_year_from: 1980
   features:
     sort_by: ISO_TIME
     datetime:
@@ -78,6 +80,7 @@ ibtracs.ALL.list.v04r01:
     raw: data/raw/ibtracs.ALL.list.v04r01.csv
     processed: data/processed/ibtracs.ALL.list.v04r01/
     splits: data/splits/ibtracs.ALL.list.v04r01/
+    results: results/ibtracs.ALL.list.v04r01/
   target: LANDFALL
   target_transform: binary_landfall
   preprocessing:
@@ -86,6 +89,7 @@ ibtracs.ALL.list.v04r01:
     high_missing_values_threshold: 0.6
     drop_duplicates: true
     missing_values_strategy: median
+    filter_year_from: 1980
   features:
     sort_by: ISO_TIME
     datetime:

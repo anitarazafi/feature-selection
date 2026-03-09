@@ -1,14 +1,14 @@
 import yaml
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+from sklearn.neural_network import MLPClassifier
 from src.utils.paths import CONFIG_DIR
 
 
 MODEL_REGISTRY = {
-    "logistic_regression": LogisticRegression,
     "random_forest": RandomForestClassifier,
-    "xgboost": XGBClassifier
+    "xgboost": XGBClassifier,
+    "mlp": MLPClassifier
 }
 
 def load_models():
