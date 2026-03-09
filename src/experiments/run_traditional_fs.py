@@ -132,8 +132,8 @@ def run_traditional_fs(dataset_name):
     cfg = all_configs[dataset_name]
 
     # Load fs config
-    with open(CONFIG_DIR / "fs.yaml", "r") as f:
-        fs_cfg = yaml.safe_load(f)
+    from src.utils.load_fs_config import load_fs_config
+    fs_cfg = load_fs_config()
 
     traditional_cfg         = fs_cfg.get("traditional", {})
     n_features_to_select    = fs_cfg["common"]["n_features_to_select"]
@@ -188,7 +188,7 @@ def run_traditional_fs(dataset_name):
 
             train_and_evaluate(
                 MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
-                f"mutual_information_k{k}", k, selected_features,
+                "mutual_information", k, selected_features,
                 results_dir, fs_time, results
             )
 
@@ -223,7 +223,7 @@ def run_traditional_fs(dataset_name):
 
             train_and_evaluate(
                 MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
-                f"chi2_k{k}", k, selected_features,
+                "chi2", k, selected_features,
                 results_dir, fs_time, results
             )
 
@@ -262,7 +262,7 @@ def run_traditional_fs(dataset_name):
 
             train_and_evaluate(
                 MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
-                f"rfe_k{k}", k, selected_features,
+                "rfe", k, selected_features,
                 results_dir, fs_time, results
             )
 

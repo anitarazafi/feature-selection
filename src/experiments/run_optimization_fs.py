@@ -1,374 +1,341 @@
 import pandas as pd
-import numpy as np
 import pickle
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
-from sklearn.model_selection import cross_val_score
 import time
 import json
-import random
-import warnings
-from src.utils.load_models import load_models
-warnings.filterwarnings('ignore')
-from src.utils.load_fs_config import load_fs_config
-from src.utils.paths import RESULTS_DIR
+import yaml
+import numpy as np
+from pathlib import Path
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
+from scipy.optimize import differential_evolution
+import pyswarms as ps
+
+from src.utils.paths import BASE_DIR, CONFIG_DIR
 from src.utils.data_io import load_splits
-
-def evaluate_feature_subset(X_train, y_train, feature_indices):
-    """
-    Evaluate a feature subset using cross-validation.
-    Returns average F1 score.
-    """
-    if len(feature_indices) == 0:
-        return 0.0
-    
-    X_subset = X_train.iloc[:, feature_indices]
-    
-    # Use a fast model for evaluation
-    model = LogisticRegression(max_iter=1000, random_state=42)
-    
-    # 3-fold CV for speed
-    scores = cross_val_score(model, X_subset, y_train, cv=3, scoring='f1', n_jobs=-1)
-    
-    return scores.mean()
+from src.utils.load_models import load_models
 
 
-def pso_feature_selection(X_train, y_train, n_features, n_particles=30, iterations=20):
-    """
-    Particle Swarm Optimization for feature selection.
-    
-    Parameters:
-    - n_particles: Number of particles in swarm
-    - iterations: Number of optimization iterations
-    """
-    fs_config = load_fs_config()
-    pso_config = fs_config['optimization']['pso']
-    n_particles = pso_config['n_particles']
-    iterations = pso_config['iterations']
-    print(f"  Running PSO: particles={n_particles}, iterations={iterations}")
-    n_total_features = X_train.shape[1]
-    
-    # Initialize particles: continuous values in [0, 1]
-    particles = np.random.rand(n_particles, n_total_features)
-    velocities = np.random.rand(n_particles, n_total_features) * 0.1
-    
-    # Personal best positions and scores
-    personal_best_positions = particles.copy()
-    personal_best_scores = np.zeros(n_particles)
-    
-    # Global best
-    global_best_position = None
-    global_best_score = 0.0
-    
-    # PSO parameters
-    w = pso_config['w']  # Inertia weight
-    c1 = pso_config['c1']  # Cognitive parameter
-    c2 = pso_config['c2']  # Social parameter
-    
-    for iteration in range(iterations):
-        for i in range(n_particles):
-            # Convert continuous position to binary feature selection
-            # Select top n_features based on particle position values
-            feature_indices = np.argsort(particles[i])[-n_features:].tolist()
-            
-            # Evaluate fitness
-            fitness = evaluate_feature_subset(X_train, y_train, feature_indices)
-            
-            # Update personal best
-            if fitness > personal_best_scores[i]:
-                personal_best_scores[i] = fitness
-                personal_best_positions[i] = particles[i].copy()
-            
-            # Update global best
-            if fitness > global_best_score:
-                global_best_score = fitness
-                global_best_position = particles[i].copy()
-        
-        if iteration % 5 == 0:
-            print(f"    Iteration {iteration}: Best F1 = {global_best_score:.4f}")
-        
-        # Update velocities and positions
-        for i in range(n_particles):
-            r1 = np.random.rand(n_total_features)
-            r2 = np.random.rand(n_total_features)
-            
-            velocities[i] = (w * velocities[i] +
-                           c1 * r1 * (personal_best_positions[i] - particles[i]) +
-                           c2 * r2 * (global_best_position - particles[i]))
-            
-            particles[i] = particles[i] + velocities[i]
-            particles[i] = np.clip(particles[i], 0, 1)  # Keep in bounds
-    
-    # Get final best features
-    selected_features = np.argsort(global_best_position)[-n_features:].tolist()
-    
-    print(f"    Final best F1: {global_best_score:.4f}")
-    
-    return selected_features
+def get_metrics(y_true, y_pred, y_proba):
+    return {
+        "accuracy":  accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall":    recall_score(y_true, y_pred, zero_division=0),
+        "f1_score":  f1_score(y_true, y_pred, zero_division=0),
+        "auc":       roc_auc_score(y_true, y_proba),
+    }
 
 
-def differential_evolution_fs(X_train, y_train, n_features, population_size=30, generations=20):
+def evaluate_feature_subset(X_train, X_val, y_train, y_val, selected_cols, model):
     """
-    Differential Evolution for feature selection.
-    
-    Parameters:
-    - population_size: Number of candidate solutions
-    - generations: Number of evolution iterations
+    Evaluate a feature subset using AUC on validation set.
+    Returns negative AUC (since optimizers minimize).
     """
-    fs_config = load_fs_config()
-    de_config = fs_config['optimization']['differential_evolution']
-    population_size = de_config['population_size']
-    generations = de_config['generations']
-    print(f"  Running DE: population={population_size}, generations={generations}")
-    n_total_features = X_train.shape[1]
-    
-    # DE parameters
-    F = de_config['F']   # Differential weight (mutation factor)
-    CR = de_config['CR']  # Crossover probability
-    
-    # Initialize population: continuous values in [0, 1]
-    population = np.random.rand(population_size, n_total_features)
-    
-    # Evaluate initial population
-    fitness = np.zeros(population_size)
-    for i in range(population_size):
-        feature_indices = np.argsort(population[i])[-n_features:].tolist()
-        fitness[i] = evaluate_feature_subset(X_train, y_train, feature_indices)
-    
-    best_idx = np.argmax(fitness)
-    best_solution = population[best_idx].copy()
-    best_fitness = fitness[best_idx]
-    
-    for generation in range(generations):
-        for i in range(population_size):
-            # Mutation: Select 3 random distinct individuals
-            indices = [idx for idx in range(population_size) if idx != i]
-            a, b, c = random.sample(indices, 3)
-            
-            # Create mutant vector
-            mutant = population[a] + F * (population[b] - population[c])
-            mutant = np.clip(mutant, 0, 1)
-            
-            # Crossover
-            trial = np.copy(population[i])
-            crossover_mask = np.random.rand(n_total_features) < CR
-            trial[crossover_mask] = mutant[crossover_mask]
-            
-            # Ensure at least one parameter comes from mutant
-            if not crossover_mask.any():
-                random_idx = random.randint(0, n_total_features - 1)
-                trial[random_idx] = mutant[random_idx]
-            
-            # Selection: Compare trial with current
-            trial_features = np.argsort(trial)[-n_features:].tolist()
-            trial_fitness = evaluate_feature_subset(X_train, y_train, trial_features)
-            
-            # Replace if better
-            if trial_fitness > fitness[i]:
-                population[i] = trial
-                fitness[i] = trial_fitness
-                
-                # Update global best
-                if trial_fitness > best_fitness:
-                    best_fitness = trial_fitness
-                    best_solution = trial.copy()
-        
-        if generation % 5 == 0:
-            print(f"    Generation {generation}: Best F1 = {best_fitness:.4f}")
-    
-    # Get final best features
-    selected_features = np.argsort(best_solution)[-n_features:].tolist()
-    
-    print(f"    Final best F1: {best_fitness:.4f}")
-    
-    return selected_features
+    if len(selected_cols) == 0:
+        return 0.0  # penalize empty subsets
+
+    model.fit(X_train[selected_cols], y_train)
+    y_proba = model.predict_proba(X_val[selected_cols])[:, 1]
+    return roc_auc_score(y_val, y_proba)
 
 
-def train_with_selected_features(X_train, X_test, y_train, y_test,
-                                  method_name, n_features, dataset_name, selected_features):
+# ── PSO ───────────────────────────────────────────────────────────────────────
+
+def pso_objective(position, X_train, X_val, y_train, y_val, feature_names, model, target_k):
     """
-    Train all models with selected features and return results.
+    Objective function for PSO.
+    position: (n_particles, n_features) binary-like matrix
+    Returns cost (1 - AUC) for each particle.
     """
-    results = []
-    X_train_selected = X_train.iloc[:, selected_features]
-    X_test_selected = X_test.iloc[:, selected_features]
-    MODELS = load_models()
+    n_particles = position.shape[0]
+    costs = np.zeros(n_particles)
+
+    for i in range(n_particles):
+        # Convert continuous position to binary by selecting top-k features
+        top_k_idx    = np.argsort(position[i])[-target_k:]
+        selected_cols = [feature_names[j] for j in top_k_idx]
+        auc = evaluate_feature_subset(
+            X_train, X_val, y_train, y_val, selected_cols, model
+        )
+        costs[i] = 1 - auc  # minimize cost = maximize AUC
+
+    return costs
+
+
+def apply_pso(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
+    n_particles  = cfg.get("n_particles", 30)
+    iterations   = cfg.get("iterations", 20)
+    w            = cfg.get("w", 0.7)
+    c1           = cfg.get("c1", 1.5)
+    c2           = cfg.get("c2", 1.5)
+    n_features   = X_train.shape[1]
+    feature_names = list(X_train.columns)
+
+    options = {"c1": c1, "c2": c2, "w": w}
+    bounds  = (np.zeros(n_features), np.ones(n_features))
+
+    optimizer = ps.single.GlobalBestPSO(
+        n_particles=n_particles,
+        dimensions=n_features,
+        options=options,
+        bounds=bounds
+    )
+
+    best_cost, best_pos = optimizer.optimize(
+        pso_objective,
+        iters=iterations,
+        verbose=False,
+        X_train=X_train,
+        X_val=X_val,
+        y_train=y_train,
+        y_val=y_val,
+        feature_names=feature_names,
+        model=model,
+        target_k=target_k
+    )
+
+    # Get final selected features from best position
+    top_k_idx     = np.argsort(best_pos)[-target_k:]
+    selected_cols = [feature_names[j] for j in top_k_idx]
+    best_auc      = 1 - best_cost
+
+    print(f"  PSO best val AUC: {best_auc:.4f}")
+    return X_train[selected_cols], X_val[selected_cols], X_test[selected_cols], selected_cols, optimizer
+
+
+# ── DE ────────────────────────────────────────────────────────────────────────
+
+def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
+    population_size = cfg.get("population_size", 30)
+    generations     = cfg.get("generations", 20)
+    F               = cfg.get("F", 0.8)
+    CR              = cfg.get("CR", 0.9)
+    n_features      = X_train.shape[1]
+    feature_names   = list(X_train.columns)
+
+    # scipy popsize is a multiplier — convert to actual population size
+    actual_popsize = max(1, population_size // n_features)
+
+    best_result = {"auc": 0, "cols": []}
+
+    def de_objective(position):
+        top_k_idx     = np.argsort(position)[-target_k:]
+        selected_cols = [feature_names[j] for j in top_k_idx]
+        auc = evaluate_feature_subset(
+            X_train, X_val, y_train, y_val, selected_cols, model
+        )
+        if auc > best_result["auc"]:
+            best_result["auc"]  = auc
+            best_result["cols"] = selected_cols
+        return 1 - auc
+
+    bounds = [(0, 1)] * n_features
+
+    result = differential_evolution(
+        de_objective,
+        bounds=bounds,
+        maxiter=generations,
+        popsize=actual_popsize,  # now correctly 30//63 = 1 → 63 individuals
+        mutation=F,
+        recombination=CR,
+        seed=42,
+        tol=1e-4,
+        polish=False,
+        disp=True
+    )
+
+    selected_cols = best_result["cols"]
+    best_auc      = best_result["auc"]
+
+    print(f"  DE best val AUC: {best_auc:.4f}")
+    return X_train[selected_cols], X_val[selected_cols], X_test[selected_cols], selected_cols, result
+
+
+# ── Train & Evaluate ──────────────────────────────────────────────────────────
+
+def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                       fs_name, n_features, selected_features,
+                       results_dir, fs_time, results):
     for model_name, model in MODELS.items():
-        # Train
-        start_time = time.time()
-        model.fit(X_train_selected, y_train)
-        train_time = time.time() - start_time
-        
-        # Predict
-        y_pred = model.predict(X_test_selected)
-        y_pred_proba = model.predict_proba(X_test_selected)[:, 1]
-        
-        # Metrics
-        accuracy = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred)
-        recall = recall_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, y_pred_proba)
+        print(f"  Training {model_name}...")
+
+        start_time   = time.time()
+        model.fit(X_tr, y_train)
+        train_time   = time.time() - start_time
+
+        y_val_pred   = model.predict(X_v)
+        y_val_proba  = model.predict_proba(X_v)[:, 1]
+        val_metrics  = get_metrics(y_val, y_val_pred, y_val_proba)
+
+        y_test_pred  = model.predict(X_te)
+        y_test_proba = model.predict_proba(X_te)[:, 1]
+        test_metrics = get_metrics(y_test, y_test_pred, y_test_proba)
+
+        print(f"  Training time: {train_time:.2f}s")
+        print(f"  {'Metric':<12} {'Val':>8} {'Test':>8}")
+        print(f"  {'-'*30}")
+        for metric in ["accuracy", "precision", "recall", "f1_score", "auc"]:
+            print(f"  {metric:<12} {val_metrics[metric]:>8.4f} {test_metrics[metric]:>8.4f}")
+        print()
 
         # Save predictions
-        pred_dir = RESULTS_DIR / dataset_name / "predictions" / method_name
+        pred_dir = results_dir / "predictions" / "optimization" / fs_name
         pred_dir.mkdir(parents=True, exist_ok=True)
-        predictions = {
-            "y_true": y_test.tolist(),
-            "y_pred": y_pred.tolist(),
-            "y_pred_proba": y_pred_proba.tolist(),
-            "model": model_name,
-            "n_features": X_train.shape[1]
-        }
         with open(pred_dir / f"{model_name}_n{n_features}_predictions.json", "w") as f:
-            json.dump(predictions, f)
-        
-        # Save model
-        model_dir = RESULTS_DIR / dataset_name / "models" / method_name
-        model_dir.mkdir(parents=True, exist_ok=True)
-        
-        model_filename = f"{model_name}_k{n_features}.pkl"
-        with open(model_dir / model_filename, "wb") as f:
-            pickle.dump(model, f)
-        
-        # Store results
-        results.append({
-            "dataset": dataset_name,
-            "model": model_name,
-            "method": method_name,
-            "n_features": n_features,
-            "accuracy": round(accuracy, 4),      
-            "precision": round(precision, 4),    
-            "recall": round(recall, 4),          
-            "f1_score": round(f1, 4),            
-            "auc": round(auc, 4),                
-            "train_time": round(train_time, 2)
-        })
-    
-    return results
+            json.dump({
+                "val": {
+                    "y_true": y_val.tolist(),
+                    "y_pred": y_val_pred.tolist(),
+                    "y_pred_proba": y_val_proba.tolist(),
+                },
+                "test": {
+                    "y_true": y_test.tolist(),
+                    "y_pred": y_test_pred.tolist(),
+                    "y_pred_proba": y_test_proba.tolist(),
+                },
+                "model": model_name,
+                "n_features": n_features,
+                "selected_features": selected_features,
+            }, f)
 
+        # Save model
+        model_dir = results_dir / "models" / "optimization" / fs_name
+        model_dir.mkdir(parents=True, exist_ok=True)
+        with open(model_dir / f"{model_name}_n{n_features}.pkl", "wb") as f:
+            pickle.dump(model, f)
+
+        results.append({
+            "model":          model_name,
+            "fs_method":      fs_name,
+            "n_features":     n_features,
+            "fs_time":        round(fs_time, 2),
+            "val_accuracy":   round(val_metrics["accuracy"],  4),
+            "val_precision":  round(val_metrics["precision"], 4),
+            "val_recall":     round(val_metrics["recall"],    4),
+            "val_f1_score":   round(val_metrics["f1_score"],  4),
+            "val_auc":        round(val_metrics["auc"],       4),
+            "test_accuracy":  round(test_metrics["accuracy"],  4),
+            "test_precision": round(test_metrics["precision"], 4),
+            "test_recall":    round(test_metrics["recall"],    4),
+            "test_f1_score":  round(test_metrics["f1_score"],  4),
+            "test_auc":       round(test_metrics["auc"],       4),
+            "train_time":     round(train_time, 2),
+        })
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def run_optimization_fs(dataset_name):
-    """
-    Run optimization-based feature selection methods.
-    """
     print(f"\n{'='*60}")
-    print(f"Optimization-Based Feature Selection: {dataset_name}")
+    print(f"= Running Optimization-Based Feature Selection for: {dataset_name}")
     print(f"{'='*60}\n")
-    
-    # Load preprocessed splits
-    splits = load_splits(dataset_name)
+
+    # Load configs
+    with open(CONFIG_DIR / "datasets.yaml", "r") as f:
+        all_configs = yaml.safe_load(f)
+    if dataset_name not in all_configs:
+        raise ValueError(f"Dataset '{dataset_name}' not found in datasets.yaml")
+    cfg = all_configs[dataset_name]
+
+    from src.utils.load_fs_config import load_fs_config
+    fs_cfg = load_fs_config()
+
+    opt_cfg              = fs_cfg.get("optimization", {})
+    n_features_to_select = fs_cfg["common"]["n_features_to_select"]
+
+    splits_dir  = BASE_DIR / cfg["paths"]["splits"]
+    results_dir = BASE_DIR / cfg["paths"]["results"]
+
+    splits  = load_splits(splits_dir)
     X_train = splits["X_train"]
-    X_test = splits["X_test"]
+    X_val   = splits["X_val"]
+    X_test  = splits["X_test"]
     y_train = splits["y_train"]
-    y_test = splits["y_test"]
-    print(f"Training samples: {len(X_train)}")
-    print(f"Test samples: {len(X_test)}")
-    print(f"Original features: {X_train.shape[1]}\n")
-    
-    all_results = []
+    y_val   = splits["y_val"]
+    y_test  = splits["y_test"]
 
-    fs_config = load_fs_config()
+    print(f"Training samples:    {len(X_train)}")
+    print(f"Validation samples:  {len(X_val)}")
+    print(f"Test samples:        {len(X_test)}")
+    print(f"Features (original): {X_train.shape[1]}\n")
 
-    pso_config = fs_config['optimization']['pso']
-    if pso_config.get('enabled', True):
-        TARGET_N_FEATURES = pso_config['target_n_features']
-        # ==================== PARTICLE SWARM OPTIMIZATION ====================
-        print(f"\n{'='*60}")
-        print("PARTICLE SWARM OPTIMIZATION (PSO)")
-        print(f"{'='*60}\n")
-        
-        for n_features in TARGET_N_FEATURES:
-            if n_features >= X_train.shape[1]:
-                continue
-            
-            print(f"\n--- Selecting {n_features} features ---")
-            
-            start_time = time.time()
-            selected_indices = pso_feature_selection(X_train, y_train, n_features)
-            selection_time = time.time() - start_time
-            
-            selected_features = X_train.columns[selected_indices].tolist()
-            
-            print(f"  Selection completed in {selection_time:.2f}s")
-            
-            # Save selected features
-            features_dir = RESULTS_DIR / dataset_name / "features" / "pso"
-            features_dir.mkdir(parents=True, exist_ok=True)
-            
-            with open(features_dir / f"selected_k{n_features}.json", "w") as f:
-                json.dump({
-                    "n_features": n_features,
-                    "selected_features": selected_features,
-                    "selection_time": selection_time
-                }, f, indent=2)
-            
-            # Train models and collect results
-            results = train_with_selected_features(
-                X_train, X_test, y_train, y_test,
-                "pso", n_features, dataset_name, selected_indices
+    MODELS  = load_models()
+    results = []
+
+    # Use a single estimator for optimization fitness evaluation
+    # (separate from MODELS to avoid polluting trained models)
+    eval_model = list(MODELS.values())[1]  # xgboost — fastest and most stable
+
+    # ── PSO ───────────────────────────────────────────────────────
+    pso_cfg = opt_cfg.get("pso", {})
+    if pso_cfg.get("enabled", False):
+        for k in n_features_to_select:
+            print(f"\n{'─'*60}")
+            print(f"Feature Selection: PSO (k={k})")
+            print(f"{'─'*60}")
+
+            fs_start = time.time()
+            X_tr, X_v, X_te, selected_features, optimizer = apply_pso(
+                X_train, X_val, X_test, y_train, y_val,
+                cfg=pso_cfg, target_k=k, model=eval_model
             )
-            
-            all_results.extend(results)
-            
-            # Print summary
-            for r in results:
-                print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
-        
-    de_config = fs_config['optimization']['differential_evolution']
-    if de_config.get('enabled', True):
-        TARGET_N_FEATURES = de_config['target_n_features']
-        # ==================== DIFFERENTIAL EVOLUTION ====================
-        print(f"\n{'='*60}")
-        print("DIFFERENTIAL EVOLUTION (DE)")
-        print(f"{'='*60}\n")
-        
-        for n_features in TARGET_N_FEATURES:
-            if n_features >= X_train.shape[1]:
-                continue
-            
-            print(f"\n--- Selecting {n_features} features ---")
-            
-            start_time = time.time()
-            selected_indices = differential_evolution_fs(X_train, y_train, n_features)
-            selection_time = time.time() - start_time
-            
-            selected_features = X_train.columns[selected_indices].tolist()
-            
-            print(f"  Selection completed in {selection_time:.2f}s")
-            
-            # Save selected features
-            features_dir = RESULTS_DIR / dataset_name / "features" / "differential_evolution"
-            features_dir.mkdir(parents=True, exist_ok=True)
-            
-            with open(features_dir / f"selected_k{n_features}.json", "w") as f:
-                json.dump({
-                    "n_features": n_features,
-                    "selected_features": selected_features,
-                    "selection_time": selection_time
-                }, f, indent=2)
-            
-            # Train models and collect results
-            results = train_with_selected_features(
-                X_train, X_test, y_train, y_test,
-                "differential_evolution", n_features, dataset_name, selected_indices
+            fs_time = time.time() - fs_start
+
+            print(f"Selected features: {k} / {X_train.shape[1]}")
+            print(f"Feature selection time: {fs_time:.2f}s")
+            print(f"Features: {selected_features}\n")
+
+            # Save selector
+            selector_dir = results_dir / "selectors" / "optimization"
+            selector_dir.mkdir(parents=True, exist_ok=True)
+            with open(selector_dir / f"pso_k{k}_features.json", "w") as f:
+                json.dump(selected_features, f)
+            # with open(selector_dir / f"pso_k{k}_optimizer.pkl", "wb") as f:
+            #     pickle.dump(optimizer, f)
+
+            train_and_evaluate(
+                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                "pso", k, selected_features,
+                results_dir, fs_time, results
             )
-            
-            all_results.extend(results)
-            
-            # Print summary
-            for r in results:
-                print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
-        
-    # Save all results
-    results_dir = RESULTS_DIR / dataset_name / "tables"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    results_df = pd.DataFrame(all_results)
-    results_df.to_csv(results_dir / f"optimization_fs.csv", index=False)
-    
-    print(f"\n{'='*60}")
-    print(f"Optimization FS complete for {dataset_name}")
-    print(f"Saved results to {results_dir / f'optimization_fs.csv'}")
-    print(f"{'='*60}\n")
-    
+
+    # ── DE ────────────────────────────────────────────────────────
+    de_cfg = opt_cfg.get("differential_evolution", {})
+    if de_cfg.get("enabled", False):
+        for k in n_features_to_select:
+            print(f"\n{'─'*60}")
+            print(f"Feature Selection: DIFFERENTIAL EVOLUTION (k={k})")
+            print(f"{'─'*60}")
+
+            fs_start = time.time()
+            X_tr, X_v, X_te, selected_features, result = apply_de(
+                X_train, X_val, X_test, y_train, y_val,
+                cfg=de_cfg, target_k=k, model=eval_model
+            )
+            fs_time = time.time() - fs_start
+
+            print(f"Selected features: {k} / {X_train.shape[1]}")
+            print(f"Feature selection time: {fs_time:.2f}s")
+            print(f"Features: {selected_features}\n")
+
+            # Save selector
+            selector_dir = results_dir / "selectors" / "optimization"
+            selector_dir.mkdir(parents=True, exist_ok=True)
+            with open(selector_dir / f"de_k{k}_features.json", "w") as f:
+                json.dump(selected_features, f)
+            with open(selector_dir / f"de_k{k}_result.pkl", "wb") as f:
+                pickle.dump(result, f)
+
+            train_and_evaluate(
+                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                "differential_evolution", k, selected_features,
+                results_dir, fs_time, results
+            )
+
+    # Save results
+    tables_dir = results_dir / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(tables_dir / "optimization.csv", index=False)
+    print(f"\nSaved results to {tables_dir / 'optimization.csv'}")
+    print(f"Saved models to {results_dir / 'models' / 'optimization'}\n")
+
     return results_df
