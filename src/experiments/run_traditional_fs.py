@@ -1,250 +1,277 @@
 import pandas as pd
-import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
-from sklearn.feature_selection import SelectKBest, chi2
+import pickle
 import time
 import json
-import pickle
-from src.utils.paths import RESULTS_DIR
+import yaml
+import numpy as np
+from pathlib import Path
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
+from sklearn.feature_selection import mutual_info_classif, SelectKBest, chi2, RFE
+
+from src.utils.paths import BASE_DIR, CONFIG_DIR
 from src.utils.data_io import load_splits
 from src.utils.load_models import load_models
-from src.utils.load_fs_config import load_fs_config
 
 
-def correlation_based_selection(X_train, X_test, n_features, threshold):
-    """
-    Select features based on correlation with target and remove highly correlated features.
-    Strategy:
-    1. Remove features with correlation > 0.95 with each other
-    2. Select top n_features based on absolute correlation with target
-    """
-    # Calculate correlation with all features
-    corr_matrix = X_train.corr().abs()
-    
-    # Find highly correlated pairs (upper triangle)
-    upper_triangle = corr_matrix.where(
-        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-    )
-    
-    # Drop features with correlation > threshold
-    to_drop = [column for column in upper_triangle.columns 
-               if any(upper_triangle[column] > threshold)]
-    
-    X_train_reduced = X_train.drop(columns=to_drop, errors='ignore')
-    X_test_reduced = X_test.drop(columns=to_drop, errors='ignore')
-    
-    # If still more features than needed, select top n based on variance
-    if X_train_reduced.shape[1] > n_features:
-        variances = X_train_reduced.var()
-        top_features = variances.nlargest(n_features).index.tolist()
-        X_train_reduced = X_train_reduced[top_features]
-        X_test_reduced = X_test_reduced[top_features]
-    
-    selected_features = X_train_reduced.columns.tolist()
-    
-    return X_train_reduced, X_test_reduced, selected_features
+def get_metrics(y_true, y_pred, y_proba):
+    return {
+        "accuracy":  accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall":    recall_score(y_true, y_pred, zero_division=0),
+        "f1_score":  f1_score(y_true, y_pred, zero_division=0),
+        "auc":       roc_auc_score(y_true, y_proba),
+    }
 
 
-def variance_threshold_selection(X_train, X_test, n_features):
-    """
-    Select features with highest variance.
-    """
-    # Calculate variance for all features
-    variances = X_train.var()
-    
-    # Select top n_features with highest variance
-    top_features = variances.nlargest(n_features).index.tolist()
-    
-    X_train_selected = X_train[top_features]
-    X_test_selected = X_test[top_features]
-    
-    return X_train_selected, X_test_selected, top_features
+def apply_mutual_information(X_train, X_val, X_test, y_train, k):
+    selector = SelectKBest(mutual_info_classif, k=k)
+    selector.fit(X_train, y_train)
+    selected_cols = X_train.columns[selector.get_support()]
+    return X_train[selected_cols], X_val[selected_cols], X_test[selected_cols], selector
 
 
-def chi_square_selection(X_train, X_test, y_train, n_features):
-    """
-    Select features using chi-square test.
-    Note: Chi-square requires non-negative features.
-    """
-    # Make all features non-negative (min-max scaling to [0, 1])
-    from sklearn.preprocessing import MinMaxScaler
-    scaler = MinMaxScaler()
-    
-    X_train_scaled = pd.DataFrame(
-        scaler.fit_transform(X_train),
-        columns=X_train.columns,
-        index=X_train.index
-    )
-    X_test_scaled = pd.DataFrame(
-        scaler.transform(X_test),
-        columns=X_test.columns,
-        index=X_test.index
-    )
-    
-    # Apply chi-square selection
-    selector = SelectKBest(chi2, k=min(n_features, X_train.shape[1]))
-    X_train_selected = selector.fit_transform(X_train_scaled, y_train)
-    X_test_selected = selector.transform(X_test_scaled)
-    
-    # Get selected feature names
-    selected_features = X_train_scaled.columns[selector.get_support()].tolist()
-    
-    # Convert back to DataFrame
-    X_train_selected = pd.DataFrame(X_train_selected, columns=selected_features)
-    X_test_selected = pd.DataFrame(X_test_selected, columns=selected_features)
-    
-    return X_train_selected, X_test_selected, selected_features
+def apply_chi2(X_train, X_val, X_test, y_train, k):
+    X_train_abs = X_train.abs()
+    X_val_abs   = X_val.abs()
+    X_test_abs  = X_test.abs()
+    selector = SelectKBest(chi2, k=k)
+    selector.fit(X_train_abs, y_train)
+    selected_cols = X_train.columns[selector.get_support()]
+    return X_train[selected_cols], X_val[selected_cols], X_test[selected_cols], selector
 
 
-def train_with_selected_features(X_train, X_test, y_train, y_test, method_name, n_features, dataset_name):
-    """
-    Train all models with selected features and return results.
-    """
-    results = []
-    MODELS = load_models()
+def apply_rfe(X_train, X_val, X_test, y_train, estimator, k, cfg):
+    step = cfg.get("step", 5)
+    selector = RFE(estimator=estimator, n_features_to_select=k, step=step)
+    selector.fit(X_train, y_train)
+    selected_cols = X_train.columns[selector.get_support()]
+    return X_train[selected_cols], X_val[selected_cols], X_test[selected_cols], selector
+
+
+def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                       fs_name, n_features, selected_features,
+                       results_dir, fs_time, results):
     for model_name, model in MODELS.items():
-        # Train
-        start_time = time.time()
-        model.fit(X_train, y_train)
-        train_time = time.time() - start_time
-        
-        # Predict
-        y_pred = model.predict(X_test)
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
+        print(f"  Training {model_name}...")
 
-        print("Unique predictions:", np.unique(y_pred))
-        print("Positive predictions:", np.sum(y_pred))
-        
-        # Metrics
-        accuracy = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred)
-        recall = recall_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, y_pred_proba)
+        start_time = time.time()
+        model.fit(X_tr, y_train)
+        train_time = time.time() - start_time
+
+        y_val_pred   = model.predict(X_v)
+        y_val_proba  = model.predict_proba(X_v)[:, 1]
+        val_metrics  = get_metrics(y_val, y_val_pred, y_val_proba)
+
+        y_test_pred  = model.predict(X_te)
+        y_test_proba = model.predict_proba(X_te)[:, 1]
+        test_metrics = get_metrics(y_test, y_test_pred, y_test_proba)
+
+        print(f"  Training time: {train_time:.2f}s")
+        print(f"  {'Metric':<12} {'Val':>8} {'Test':>8}")
+        print(f"  {'-'*30}")
+        for metric in ["accuracy", "precision", "recall", "f1_score", "auc"]:
+            print(f"  {metric:<12} {val_metrics[metric]:>8.4f} {test_metrics[metric]:>8.4f}")
+        print()
 
         # Save predictions
-        pred_dir = RESULTS_DIR / dataset_name / "predictions" / method_name
+        pred_dir = results_dir / "predictions" / "traditional" / fs_name
         pred_dir.mkdir(parents=True, exist_ok=True)
         predictions = {
-            "y_true": y_test.tolist(),
-            "y_pred": y_pred.tolist(),
-            "y_pred_proba": y_pred_proba.tolist(),
+            "val": {
+                "y_true": y_val.tolist(),
+                "y_pred": y_val_pred.tolist(),
+                "y_pred_proba": y_val_proba.tolist(),
+            },
+            "test": {
+                "y_true": y_test.tolist(),
+                "y_pred": y_test_pred.tolist(),
+                "y_pred_proba": y_test_proba.tolist(),
+            },
             "model": model_name,
-            "n_features": X_train.shape[1]
+            "n_features": n_features,
+            "selected_features": selected_features,
         }
         with open(pred_dir / f"{model_name}_n{n_features}_predictions.json", "w") as f:
             json.dump(predictions, f)
-        
+
         # Save model
-        model_dir = RESULTS_DIR / dataset_name / "models" / method_name
+        model_dir = results_dir / "models" / "traditional" / fs_name
         model_dir.mkdir(parents=True, exist_ok=True)
-        
-        model_filename = f"{model_name}_k{n_features}.pkl"
-        with open(model_dir / model_filename, "wb") as f:
+        with open(model_dir / f"{model_name}_n{n_features}.pkl", "wb") as f:
             pickle.dump(model, f)
-        
-        # Store results
+
         results.append({
-            "dataset": dataset_name,
-            "model": model_name,
-            "method": method_name,
-            "n_features": n_features,
-            "accuracy": round(accuracy, 4),      
-            "precision": round(precision, 4),    
-            "recall": round(recall, 4),          
-            "f1_score": round(f1, 4),            
-            "auc": round(auc, 4),                
-            "train_time": round(train_time, 2)
+            "model":         model_name,
+            "fs_method":     fs_name,
+            "n_features":    n_features,
+            "fs_time":       round(fs_time, 2),
+            "val_accuracy":  round(val_metrics["accuracy"],  4),
+            "val_precision": round(val_metrics["precision"], 4),
+            "val_recall":    round(val_metrics["recall"],    4),
+            "val_f1_score":  round(val_metrics["f1_score"],  4),
+            "val_auc":       round(val_metrics["auc"],       4),
+            "test_accuracy":  round(test_metrics["accuracy"],  4),
+            "test_precision": round(test_metrics["precision"], 4),
+            "test_recall":    round(test_metrics["recall"],    4),
+            "test_f1_score":  round(test_metrics["f1_score"],  4),
+            "test_auc":       round(test_metrics["auc"],       4),
+            "train_time":    round(train_time, 2),
         })
-    
-    return results
 
 
 def run_traditional_fs(dataset_name):
-    """
-    Run all traditional feature selection methods.
-    """
     print(f"\n{'='*60}")
-    print(f"Traditional Feature Selection: {dataset_name}")
+    print(f"= Running Traditional Feature Selection for: {dataset_name}")
     print(f"{'='*60}\n")
-    
-    # Load preprocessed splits
-    splits = load_splits(dataset_name)
+
+    # Load dataset config
+    with open(CONFIG_DIR / "datasets.yaml", "r") as f:
+        all_configs = yaml.safe_load(f)
+    if dataset_name not in all_configs:
+        raise ValueError(f"Dataset '{dataset_name}' not found in datasets.yaml")
+    cfg = all_configs[dataset_name]
+
+    # Load fs config
+    with open(CONFIG_DIR / "fs.yaml", "r") as f:
+        fs_cfg = yaml.safe_load(f)
+
+    traditional_cfg         = fs_cfg.get("traditional", {})
+    n_features_to_select    = fs_cfg["common"]["n_features_to_select"]
+
+    splits_dir  = BASE_DIR / cfg["paths"]["splits"]
+    results_dir = BASE_DIR / cfg["paths"]["results"]
+
+    splits  = load_splits(splits_dir)
     X_train = splits["X_train"]
-    X_test = splits["X_test"]
+    X_val   = splits["X_val"]
+    X_test  = splits["X_test"]
     y_train = splits["y_train"]
-    y_test = splits["y_test"]
-    print(f"Training samples: {len(X_train)}")
-    print(f"Test samples: {len(X_test)}")
-    print(f"Original features: {X_train.shape[1]}\n")
-    
-    all_results = []
+    y_val   = splits["y_val"]
+    y_test  = splits["y_test"]
 
-    fs_config = load_fs_config()
-    N_FEATURES_TO_SELECT = fs_config['n_features_to_select']
-    traditional_config = fs_config['traditional']
-    fs_methods = ["correlation", 
-                 "variance",
-                 "chi_square"]
+    print(f"Training samples:    {len(X_train)}")
+    print(f"Validation samples:  {len(X_val)}")
+    print(f"Test samples:        {len(X_test)}")
+    print(f"Features (original): {X_train.shape[1]}\n")
 
-    for method_name in fs_methods:
-        if not traditional_config[method_name].get('enabled', True):
-            continue
-        
-        print(f"\n--- {method_name.upper()} ---")
-        for n_features in N_FEATURES_TO_SELECT:
-            if n_features >= X_train.shape[1]:
-                continue  # Skip if requesting more features than available
-            
-            print(f"\nSelecting top {n_features} features...")
-            
-            # Select features
-            if method_name == "correlation":
-                threshold = traditional_config['correlation'].get('threshold', 0.95)
-                X_train_selected, X_test_selected, selected_features = correlation_based_selection(
-                    X_train, X_test, n_features, threshold
-                )
-            elif method_name == "variance":
-                X_train_selected, X_test_selected, selected_features = variance_threshold_selection(
-                    X_train, X_test, n_features
-                )
-            elif method_name == "chi_square":
-                X_train_selected, X_test_selected, selected_features = chi_square_selection(
-                    X_train, X_test, y_train, n_features
-                )
-            else:
-                    continue
-            
-            print(f"Selected {len(selected_features)} features")
-            
-            # Save selected features
-            features_dir = RESULTS_DIR / dataset_name / "features" / method_name
-            features_dir.mkdir(parents=True, exist_ok=True)
-            
-            with open(features_dir / f"selected_k{n_features}.json", "w") as f:
-                json.dump(selected_features, f, indent=2)
-            
-            # Train models and collect results
-            results = train_with_selected_features(
-                X_train_selected, X_test_selected, y_train, y_test,
-                method_name, len(selected_features), dataset_name
+    MODELS  = load_models()
+    results = []
+
+    # ── 1. Mutual Information (run for each k) ────────────────────
+    mi_cfg = traditional_cfg.get("mutual_information", {})
+    if mi_cfg.get("enabled", False):
+        for k in n_features_to_select:
+            if k >= X_train.shape[1]:
+                print(f"Skipping mutual_information k={k}: exceeds available features")
+                continue
+
+            print(f"\n{'─'*60}")
+            print(f"Feature Selection: MUTUAL INFORMATION (k={k})")
+            print(f"{'─'*60}")
+
+            fs_start = time.time()
+            X_tr, X_v, X_te, selector = apply_mutual_information(
+                X_train, X_val, X_test, y_train, k=k
             )
-            
-            all_results.extend(results)
-            
-            # Print summary for this configuration
-            for r in results:
-                print(f"  {r['model']:20s} - F1: {r['f1_score']:.4f}, AUC: {r['auc']:.4f}")
-                
-    # Save all results
-    results_dir = RESULTS_DIR / dataset_name / "tables"
-    results_dir.mkdir(parents=True, exist_ok=True)
-    results_df = pd.DataFrame(all_results)
-    results_df.to_csv(results_dir / f"traditional_fs.csv", index=False)
-    
-    print(f"\n{'='*60}")
-    print(f"Traditional FS complete for {dataset_name}")
-    print(f"Saved results to {results_dir / f'traditional_fs.csv'}")
-    print(f"{'='*60}\n")
-    
+            fs_time = time.time() - fs_start
+            selected_features = X_tr.columns.tolist()
+
+            print(f"Selected features: {k} / {X_train.shape[1]}")
+            print(f"Feature selection time: {fs_time:.2f}s\n")
+
+            selector_dir = results_dir / "selectors" / "traditional"
+            selector_dir.mkdir(parents=True, exist_ok=True)
+            with open(selector_dir / f"mutual_information_k{k}_selector.pkl", "wb") as f:
+                pickle.dump(selector, f)
+            with open(selector_dir / f"mutual_information_k{k}_features.json", "w") as f:
+                json.dump(selected_features, f)
+
+            train_and_evaluate(
+                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                f"mutual_information_k{k}", k, selected_features,
+                results_dir, fs_time, results
+            )
+
+    # ── 2. Chi-Square (run for each k) ────────────────────────────
+    chi2_cfg = traditional_cfg.get("chi2", {})
+    if chi2_cfg.get("enabled", False):
+        for k in n_features_to_select:
+            if k >= X_train.shape[1]:
+                print(f"Skipping chi2 k={k}: exceeds available features")
+                continue
+
+            print(f"\n{'─'*60}")
+            print(f"Feature Selection: CHI2 (k={k})")
+            print(f"{'─'*60}")
+
+            fs_start = time.time()
+            X_tr, X_v, X_te, selector = apply_chi2(
+                X_train, X_val, X_test, y_train, k=k
+            )
+            fs_time = time.time() - fs_start
+            selected_features = X_tr.columns.tolist()
+
+            print(f"Selected features: {k} / {X_train.shape[1]}")
+            print(f"Feature selection time: {fs_time:.2f}s\n")
+
+            selector_dir = results_dir / "selectors" / "traditional"
+            selector_dir.mkdir(parents=True, exist_ok=True)
+            with open(selector_dir / f"chi2_k{k}_selector.pkl", "wb") as f:
+                pickle.dump(selector, f)
+            with open(selector_dir / f"chi2_k{k}_features.json", "w") as f:
+                json.dump(selected_features, f)
+
+            train_and_evaluate(
+                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                f"chi2_k{k}", k, selected_features,
+                results_dir, fs_time, results
+            )
+
+    # ── 3. RFE (run for each k) ───────────────────────────────────
+    rfe_cfg = traditional_cfg.get("rfe", {})
+    if rfe_cfg.get("enabled", False):
+        estimator_name = rfe_cfg.get("estimator", "random_forest")
+        estimator      = MODELS[estimator_name]
+
+        for k in n_features_to_select:
+            if k >= X_train.shape[1]:
+                print(f"Skipping RFE k={k}: exceeds available features")
+                continue
+
+            print(f"\n{'─'*60}")
+            print(f"Feature Selection: RFE (k={k}, estimator={estimator_name})")
+            print(f"{'─'*60}")
+
+            fs_start = time.time()
+            X_tr, X_v, X_te, selector = apply_rfe(
+                X_train, X_val, X_test, y_train,
+                estimator=estimator, k=k, cfg=rfe_cfg
+            )
+            fs_time = time.time() - fs_start
+            selected_features = X_tr.columns.tolist()
+
+            print(f"Selected features: {k} / {X_train.shape[1]}")
+            print(f"Feature selection time: {fs_time:.2f}s\n")
+
+            selector_dir = results_dir / "selectors" / "traditional"
+            selector_dir.mkdir(parents=True, exist_ok=True)
+            with open(selector_dir / f"rfe_k{k}_selector.pkl", "wb") as f:
+                pickle.dump(selector, f)
+            with open(selector_dir / f"rfe_k{k}_features.json", "w") as f:
+                json.dump(selected_features, f)
+
+            train_and_evaluate(
+                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
+                f"rfe_k{k}", k, selected_features,
+                results_dir, fs_time, results
+            )
+
+    # Save results
+    tables_dir = results_dir / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(tables_dir / "traditional.csv", index=False)
+    print(f"\nSaved results to {tables_dir / 'traditional.csv'}")
+    print(f"Saved models to {results_dir / 'models' / 'traditional'}\n")
+
     return results_df

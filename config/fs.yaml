@@ -1,54 +1,38 @@
 common:
   random_state: 42
   n_jobs: -1
-
-n_features_to_select: [10, 20, 30, 40, 50]
+  n_features_to_select: [10, 30, 50]
 
 traditional:
-  correlation:
+  mutual_information:
     enabled: true
-    threshold: 0.95
-  variance:
+  chi2:
     enabled: true
-  chi_square:
+  rfe:
     enabled: true
-
-embedded:
-  l1_lasso:
-    enabled: true
-    C_values: [0.001, 0.01, 0.1, 1.0, 10.0]
-    solver: "saga"
-    max_iter: 5000
-  l2_ridge:
-    enabled: true
-    C: 1.0
-    solver: "saga"
-    max_iter: 5000
-
-xai:
-  shap:
-    enabled: true
-    n_estimators: 100
-    max_samples: 10000
-  lime:
-    enabled: true
-    n_samples: 500
-    n_estimators: 100
-    max_samples: 10000
+    step: 5
+    estimator: "random_forest" # which model to use as RFE estimator
 
 optimization:
   pso:
     enabled: true
     n_particles: 30
     iterations: 20
-    w: 0.7 # Inertia weight
-    c1: 1.5 # Cognitive parameter
-    c2: 1.5 # Social parameter
-    target_n_features: [10, 20, 30]
+    w: 0.7
+    c1: 1.5
+    c2: 1.5
   differential_evolution:
     enabled: true
     population_size: 30
     generations: 20
-    F: 0.8 # Mutation factor
-    CR: 0.9 # Crossover probability
-    target_n_features: [10, 20, 30]
+    F: 0.8
+    CR: 0.9
+
+xai:
+  shap:
+    enabled: true
+    max_samples: 10000
+  lime:
+    enabled: true
+    n_samples: 500
+    max_samples: 10000
