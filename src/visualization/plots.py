@@ -174,7 +174,7 @@ def plot_auc_curves(dataset_name):
                     y=baseline[0],
                     color=model_color[model_name],
                     linestyle="--",
-                    linewidth=1,
+                    linewidth=2,
                     alpha=0.5
                 )
 
@@ -236,3 +236,78 @@ def plot_auc_curves(dataset_name):
     plt.savefig(plots_dir / "f1_vs_features.png", dpi=150, bbox_inches="tight")
     plt.show()
     print(f"Saved to {plots_dir / 'f1_vs_features.png'}")
+
+
+def plot_heatmap(dataset_name):
+    """
+    Heatmap of AUC and F1 — method × model.
+    Best per method across all k values.
+    """
+    with open(CONFIG_DIR / "datasets.yaml", "r") as f:
+        all_configs = yaml.safe_load(f)
+    cfg         = all_configs[dataset_name]
+    results_dir = BASE_DIR / cfg["paths"]["results"]
+    tables_dir  = results_dir / "tables"
+    plots_dir   = results_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    best = pd.read_csv(tables_dir / "best_per_method.csv")
+
+    pivot_auc = best.pivot(
+        index="fs_method", columns="model", values="test_auc"
+    ).round(4)
+
+    pivot_f1 = best.pivot(
+        index="fs_method", columns="model", values="test_f1_score"
+    ).round(4)
+
+    # Sort rows — baseline first, then alphabetical
+    method_order = ["baseline"] + sorted(
+        [m for m in pivot_auc.index if m != "baseline"]
+    )
+    pivot_auc = pivot_auc.reindex(method_order)
+    pivot_f1  = pivot_f1.reindex(method_order)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle(f"Feature Selection Comparison — {dataset_name}", fontsize=13)
+
+    for ax, pivot, title in zip(
+        axes,
+        [pivot_auc, pivot_f1],
+        ["AUC (best k per method)", "F1 Score (best k per method)"]
+    ):
+        im = ax.imshow(
+            pivot.values.astype(float),
+            cmap="RdYlGn",
+            aspect="auto",
+            vmin=float(np.nanmin(pivot.values)) - 0.01,
+            vmax=float(np.nanmax(pivot.values)) + 0.01
+        )
+
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_yticks(range(len(pivot.index)))
+        ax.set_xticklabels(pivot.columns, rotation=30, ha="right", fontsize=10)
+        ax.set_yticklabels(pivot.index, fontsize=10)
+        ax.set_title(title, fontsize=11)
+
+        # Annotate each cell
+        for i in range(len(pivot.index)):
+            for j in range(len(pivot.columns)):
+                val = pivot.values[i, j]
+                if not np.isnan(float(val)):
+                    # Bold the best value per column
+                    col_max = np.nanmax(pivot.values[:, j])
+                    weight  = "bold" if float(val) == float(col_max) else "normal"
+                    ax.text(
+                        j, i, f"{float(val):.4f}",
+                        ha="center", va="center",
+                        fontsize=9, fontweight=weight,
+                        color="black"
+                    )
+
+        plt.colorbar(im, ax=ax, shrink=0.8)
+
+    plt.tight_layout()
+    plt.savefig(plots_dir / "heatmap.png", dpi=150, bbox_inches="tight")
+    plt.show()
+    print(f"Saved to {plots_dir / 'heatmap.png'}")
