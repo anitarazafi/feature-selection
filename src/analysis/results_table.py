@@ -26,9 +26,8 @@ def build_results_table(dataset_name):
 
     # ── Keep only test metrics ────────────────────────────────────
     report_cols = [
-        "model", "fs_method", "n_features",
-        "test_auc", "test_f1_score", "test_precision",
-        "test_recall", "test_accuracy",
+        "model", "fs_method", "n_features", 
+        "test_accuracy", "test_precision", "test_recall", "test_f1_score", "test_auc", 
         "fs_time", "train_time"
     ]
     # fs_time not in baseline — fill with 0
