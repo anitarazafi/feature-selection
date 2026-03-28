@@ -11,6 +11,68 @@ from src.utils.paths import BASE_DIR, CONFIG_DIR
 from src.utils.data_io import load_splits
 from src.utils.load_models import load_models
 
+def generate_latex_table(results_df, output_path, caption="Baseline Performance Metrics", label="tab:baseline_results"):
+    """Generate a LaTeX table from the results DataFrame and save it to a .tex file."""
+
+    # Columns to display and their clean LaTeX header names
+    display_cols = {
+        "model":          "Model",
+        "n_features":     "\\# Features",
+        "test_accuracy":  "Acc",
+        "test_precision": "Prec",
+        "test_recall":    "Rec",
+        "test_f1_score":  "F1",
+        "test_auc":       "AUC",
+        "train_time":     "Time (s)",
+    }
+
+    df = results_df[list(display_cols.keys())].copy()
+
+    # Build LaTeX string
+    n_cols = len(display_cols)
+    col_fmt = "l" + "c" * (n_cols - 1)
+
+    lines = []
+    lines.append(r"\begin{table}[htbp]")
+    lines.append(r"\centering")
+    lines.append(r"\caption{" + caption + "}")
+    lines.append(r"\label{" + label + "}")
+    lines.append(r"\begin{tabular}{" + col_fmt + "}")
+    lines.append(r"\toprule")
+
+    # Header row
+    header = " & ".join(display_cols.values()) + r" \\"
+    lines.append(header)
+    lines.append(r"\midrule")
+
+    # Data rows
+    for _, row in df.iterrows():
+        cells = []
+        for col in display_cols.keys():
+            val = row[col]
+            if col == "model":
+                # escape underscores for LaTeX
+                cells.append(str(val).replace("_", r"\_"))
+            elif col == "n_features":
+                cells.append(str(int(val)))
+            elif col == "train_time":
+                cells.append(f"{val:.2f}")
+            else:
+                cells.append(f"{val:.4f}")
+        lines.append(" & ".join(cells) + r" \\")
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+
+    latex_str = "\n".join(lines)
+
+    with open(output_path, "w") as f:
+        f.write(latex_str)
+
+    print(f"Saved LaTeX table to {output_path}")
+    return latex_str
+
 def train_baseline(dataset_name):
     print(f"\n{'='*60}")
     print(f"=Training baseline models for: {dataset_name}")
@@ -132,6 +194,14 @@ def train_baseline(dataset_name):
     results_df.to_csv(tables_dir / "baseline.csv", index=False)
     print(f"\nSaved results to {tables_dir / 'baseline.csv'}")
     print(f"Saved models to {results_dir / 'models' / 'baseline'}\n")
+
+    # Generate LaTeX table
+    generate_latex_table(
+        results_df,
+        output_path=tables_dir / "baseline.tex",
+        caption="Baseline Classification Performance (All Features)",
+        label="tab:baseline_results",
+    )
 
     # After training all models
     plot_learning_curves(MODELS, X_train, y_train, dataset_name, results_dir)
