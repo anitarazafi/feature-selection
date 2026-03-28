@@ -62,13 +62,7 @@ def apply_shap(X_train, X_val, X_test, model, cfg, k):
     feature_importance = pd.Series(mean_abs_shap, index=X_train.columns)
     selected_cols = feature_importance.nlargest(k).index.tolist()
 
-    return (
-        X_train[selected_cols],
-        X_val[selected_cols],
-        X_test[selected_cols],
-        selected_cols,
-        feature_importance
-    )
+    return selected_cols, feature_importance
 
 
 # ── LIME ──────────────────────────────────────────────────────────────────────
@@ -126,13 +120,7 @@ def apply_lime(X_train, X_val, X_test, y_train, model, cfg, k):
     feature_importance = pd.Series(mean_weights).sort_values(ascending=False)
     selected_cols      = feature_importance.nlargest(k).index.tolist()
 
-    return (
-        X_train[selected_cols],
-        X_val[selected_cols],
-        X_test[selected_cols],
-        selected_cols,
-        feature_importance
-    )
+    return selected_cols, feature_importance
 
 
 # ── Train & Evaluate ──────────────────────────────────────────────────────────
@@ -155,11 +143,11 @@ def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
         y_test_proba = model.predict_proba(X_te)[:, 1]
         test_metrics = get_metrics(y_test, y_test_pred, y_test_proba)
 
-        print(f"  Training time: {train_time:.2f}s")
-        print(f"  {'Metric':<12} {'Val':>8} {'Test':>8}")
-        print(f"  {'-'*30}")
+        print(f"    Training time: {train_time:.2f}s")
+        print(f"    {'Metric':<12} {'Val':>8} {'Test':>8}")
+        print(f"    {'-'*30}")
         for metric in ["accuracy", "precision", "recall", "f1_score", "auc"]:
-            print(f"  {metric:<12} {val_metrics[metric]:>8.4f} {test_metrics[metric]:>8.4f}")
+            print(f"    {metric:<12} {val_metrics[metric]:>8.4f} {test_metrics[metric]:>8.4f}")
         print()
 
         # Save predictions
@@ -207,6 +195,120 @@ def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
         })
 
 
+# ── LaTeX Tables ──────────────────────────────────────────────────────────────
+
+def generate_latex_table(results_df, output_path, caption, label):
+    """Generate a LaTeX table for performance metrics."""
+
+    display_cols = {
+        "model":          "Model",
+        "n_features":     "\\# Features",
+        "test_accuracy":  "Acc",
+        "test_precision": "Prec",
+        "test_recall":    "Rec",
+        "test_f1_score":  "F1",
+        "test_auc":       "AUC",
+        "train_time":     "Time (s)",
+    }
+
+    df = results_df[list(display_cols.keys())].copy()
+
+    n_cols = len(display_cols)
+    col_fmt = "l" + "c" * (n_cols - 1)
+
+    lines = []
+    lines.append(r"\begin{table}[htbp]")
+    lines.append(r"\centering")
+    lines.append(r"\caption{" + caption + "}")
+    lines.append(r"\label{" + label + "}")
+    lines.append(r"\begin{tabular}{" + col_fmt + "}")
+    lines.append(r"\toprule")
+
+    header = " & ".join(display_cols.values()) + r" \\"
+    lines.append(header)
+    lines.append(r"\midrule")
+
+    for _, row in df.iterrows():
+        cells = []
+        for col in display_cols.keys():
+            val = row[col]
+            if col == "model":
+                cells.append(str(val).replace("_", r"\_"))
+            elif col == "n_features":
+                cells.append(str(int(val)))
+            elif col == "train_time":
+                cells.append(f"{val:.2f}")
+            else:
+                cells.append(f"{val:.4f}")
+        lines.append(" & ".join(cells) + r" \\")
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+
+    latex_str = "\n".join(lines)
+
+    with open(output_path, "w") as f:
+        f.write(latex_str)
+
+    print(f"Saved LaTeX table to {output_path}")
+    return latex_str
+
+
+def generate_feature_selection_latex(selected_sets, x_set, output_path,
+                                     caption, label):
+    """Generate a LaTeX table showing selected features per method and the union."""
+
+    all_features = sorted(x_set)
+    methods = list(selected_sets.keys())
+
+    col_fmt = "l" + "c" * (len(methods) + 1)
+
+    lines = []
+    lines.append(r"\begin{table}[htbp]")
+    lines.append(r"\centering")
+    lines.append(r"\caption{" + caption + "}")
+    lines.append(r"\label{" + label + "}")
+    lines.append(r"\begin{tabular}{" + col_fmt + "}")
+    lines.append(r"\toprule")
+
+    method_headers = [m.replace("_", r"\_").upper() for m in methods]
+    header = "Feature & " + " & ".join(method_headers) + r" & X-Set \\"
+    lines.append(header)
+    lines.append(r"\midrule")
+
+    for feat in all_features:
+        feat_display = feat.replace("_", r"\_")
+        cells = [feat_display]
+        for method in methods:
+            if feat in selected_sets[method]:
+                cells.append(r"\checkmark")
+            else:
+                cells.append("")
+        cells.append(r"\checkmark")
+        lines.append(" & ".join(cells) + r" \\")
+
+    lines.append(r"\midrule")
+
+    count_cells = [r"\textbf{Total}"]
+    for method in methods:
+        count_cells.append(str(len(selected_sets[method])))
+    count_cells.append(str(len(x_set)))
+    lines.append(" & ".join(count_cells) + r" \\")
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table}")
+
+    latex_str = "\n".join(lines)
+
+    with open(output_path, "w") as f:
+        f.write(latex_str)
+
+    print(f"Saved feature selection LaTeX table to {output_path}")
+    return latex_str
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def run_xai_fs(dataset_name):
@@ -224,8 +326,8 @@ def run_xai_fs(dataset_name):
     from src.utils.load_fs_config import load_fs_config
     fs_cfg = load_fs_config()
 
-    xai_cfg              = fs_cfg.get("xai", {})
-    n_features_to_select = fs_cfg["common"]["n_features_to_select"]
+    xai_cfg = fs_cfg.get("xai", {})
+    k       = fs_cfg["common"]["n_features_to_select"]
 
     splits_dir  = BASE_DIR / cfg["paths"]["splits"]
     results_dir = BASE_DIR / cfg["paths"]["results"]
@@ -241,95 +343,143 @@ def run_xai_fs(dataset_name):
     print(f"Training samples:    {len(X_train)}")
     print(f"Validation samples:  {len(X_val)}")
     print(f"Test samples:        {len(X_test)}")
-    print(f"Features (original): {X_train.shape[1]}\n")
+    print(f"Features (original): {X_train.shape[1]}")
+    print(f"k (features to select): {k}\n")
 
     MODELS  = load_models()
     results = []
 
     # Pre-train a single XGBoost for SHAP and LIME explanation
-    # This is the "explainer model" — separate from the final evaluation models
     print("Pre-training explainer model (XGBoost) for SHAP and LIME...\n")
     explainer_model = deepcopy(list(MODELS.values())[1])  # deep copy — isolated from MODELS
     explainer_model.fit(X_train, y_train)
 
-    # ── SHAP ──────────────────────────────────────────────────────
+    # Store selected feature sets for union
+    selected_sets = {}
+    fs_times = {}
+
+    # ── 1. SHAP (selection only) ──────────────────────────────────
     shap_cfg = xai_cfg.get("shap", {})
     if shap_cfg.get("enabled", False):
-        for k in n_features_to_select:
-            print(f"\n{'─'*60}")
-            print(f"Feature Selection: SHAP (k={k})")
-            print(f"{'─'*60}")
+        print(f"\n{'─'*60}")
+        print(f"Feature Selection: SHAP (k={k})")
+        print(f"{'─'*60}")
 
-            fs_start = time.time()
-            X_tr, X_v, X_te, selected_features, feature_importance = apply_shap(
-                X_train, X_val, X_test,
-                model=explainer_model,
-                cfg=shap_cfg,
-                k=k
-            )
-            fs_time = time.time() - fs_start
+        fs_start = time.time()
+        selected_features, feature_importance = apply_shap(
+            X_train, X_val, X_test,
+            model=explainer_model,
+            cfg=shap_cfg,
+            k=k
+        )
+        fs_time = time.time() - fs_start
+        selected_sets["shap"] = set(selected_features)
+        fs_times["shap"] = fs_time
 
-            print(f"Selected features: {k} / {X_train.shape[1]}")
-            print(f"Feature selection time: {fs_time:.2f}s")
-            print(f"Top features: {selected_features}\n")
+        print(f"Selected features ({k}): {selected_features}")
+        print(f"Feature selection time: {fs_time:.2f}s")
 
-            # Save importance scores and selected features
-            selector_dir = results_dir / "selectors" / "xai"
-            selector_dir.mkdir(parents=True, exist_ok=True)
-            with open(selector_dir / f"shap_k{k}_features.json", "w") as f:
-                json.dump(selected_features, f)
-            feature_importance.to_csv(
-                selector_dir / f"shap_k{k}_importance.csv", header=True
-            )
+        # Save importance scores and selected features
+        selector_dir = results_dir / "selectors" / "xai"
+        selector_dir.mkdir(parents=True, exist_ok=True)
+        with open(selector_dir / f"shap_k{k}_features.json", "w") as f:
+            json.dump(selected_features, f)
+        feature_importance.to_csv(
+            selector_dir / f"shap_k{k}_importance.csv", header=True
+        )
 
-            train_and_evaluate(
-                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
-                "shap", k, selected_features,
-                results_dir, fs_time, results
-            )
-
-    # ── LIME ──────────────────────────────────────────────────────
+    # ── 2. LIME (selection only) ──────────────────────────────────
     lime_cfg = xai_cfg.get("lime", {})
     if lime_cfg.get("enabled", False):
-        for k in n_features_to_select:
-            print(f"\n{'─'*60}")
-            print(f"Feature Selection: LIME (k={k})")
-            print(f"{'─'*60}")
+        print(f"\n{'─'*60}")
+        print(f"Feature Selection: LIME (k={k})")
+        print(f"{'─'*60}")
 
-            fs_start = time.time()
-            X_tr, X_v, X_te, selected_features, feature_importance = apply_lime(
-                X_train, X_val, X_test, y_train,
-                model=explainer_model,
-                cfg=lime_cfg,
-                k=k
-            )
-            fs_time = time.time() - fs_start
+        fs_start = time.time()
+        selected_features, feature_importance = apply_lime(
+            X_train, X_val, X_test, y_train,
+            model=explainer_model,
+            cfg=lime_cfg,
+            k=k
+        )
+        fs_time = time.time() - fs_start
+        selected_sets["lime"] = set(selected_features)
+        fs_times["lime"] = fs_time
 
-            print(f"Selected features: {k} / {X_train.shape[1]}")
-            print(f"Feature selection time: {fs_time:.2f}s")
-            print(f"Top features: {selected_features}\n")
+        print(f"Selected features ({k}): {selected_features}")
+        print(f"Feature selection time: {fs_time:.2f}s")
 
-            # Save importance scores and selected features
-            selector_dir = results_dir / "selectors" / "xai"
-            selector_dir.mkdir(parents=True, exist_ok=True)
-            with open(selector_dir / f"lime_k{k}_features.json", "w") as f:
-                json.dump(selected_features, f)
-            feature_importance.to_csv(
-                selector_dir / f"lime_k{k}_importance.csv", header=True
-            )
+        # Save importance scores and selected features
+        selector_dir = results_dir / "selectors" / "xai"
+        selector_dir.mkdir(parents=True, exist_ok=True)
+        with open(selector_dir / f"lime_k{k}_features.json", "w") as f:
+            json.dump(selected_features, f)
+        feature_importance.to_csv(
+            selector_dir / f"lime_k{k}_importance.csv", header=True
+        )
 
-            train_and_evaluate(
-                MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
-                "lime", k, selected_features,
-                results_dir, fs_time, results
-            )
+    # ── 3. X-Set (Union) — Train only on this ────────────────────
+    if selected_sets:
+        print(f"\n{'─'*60}")
+        print(f"Constructing X-Set (Union of XAI Methods)")
+        print(f"{'─'*60}")
 
-    # Save results
+        x_set = sorted(set.union(*selected_sets.values()))
+        n_x_set = len(x_set)
+        total_fs_time = sum(fs_times.values())
+
+        print(f"Individual method contributions:")
+        for method, feats in selected_sets.items():
+            print(f"  {method}: {sorted(feats)}")
+        print(f"\nX-Set (union): {x_set}")
+        print(f"X-Set size: {n_x_set}")
+        print(f"Total FS time: {total_fs_time:.2f}s\n")
+
+        # Save X-Set info
+        selector_dir = results_dir / "selectors" / "xai"
+        selector_dir.mkdir(parents=True, exist_ok=True)
+        x_set_info = {
+            "x_set": x_set,
+            "n_features": n_x_set,
+            "contributing_methods": {m: sorted(f) for m, f in selected_sets.items()},
+            "fs_times": {m: round(t, 2) for m, t in fs_times.items()},
+        }
+        with open(selector_dir / "x_set.json", "w") as f:
+            json.dump(x_set_info, f, indent=2)
+
+        # Train and evaluate on X-Set only
+        X_tr_x = X_train[x_set]
+        X_v_x  = X_val[x_set]
+        X_te_x = X_test[x_set]
+
+        train_and_evaluate(
+            MODELS, X_tr_x, X_v_x, X_te_x, y_train, y_val, y_test,
+            "x_set", n_x_set, x_set,
+            results_dir, total_fs_time, results
+        )
+
+    # ── Save results ──────────────────────────────────────────────
     tables_dir = results_dir / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     results_df = pd.DataFrame(results)
     results_df.to_csv(tables_dir / "xai.csv", index=False)
     print(f"\nSaved results to {tables_dir / 'xai.csv'}")
-    print(f"Saved models to {results_dir / 'models' / 'xai'}\n")
+    print(f"Saved models to {results_dir / 'models' / 'xai'}")
+
+    # Generate performance LaTeX table
+    generate_latex_table(
+        results_df,
+        output_path=tables_dir / "xai.tex",
+        caption="Classification Performance with XAI-Based FS (X-Set)",
+        label="tab:xai_fs_results",
+    )
+
+    # Generate feature selection LaTeX table
+    generate_feature_selection_latex(
+        selected_sets, x_set,
+        output_path=tables_dir / "xai_features.tex",
+        caption="Features Selected by XAI-Based Methods",
+        label="tab:xai_fs_features",
+    )
 
     return results_df
