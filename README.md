@@ -5,9 +5,6 @@ Machine Learning project comparing several Feature Selection methods
 - raw/processed data paths:
 `config/datasets.yaml` 
 
-- results path:
-`src/utils/paths.py`
-
 ## Local development:
 `python3 -m venv venv`
 
@@ -32,3 +29,6 @@ if 'requirements.txt' in os.listdir('.'):
 else:
     print("requirements.txt not found. No dependencies to install from a file.")
 ```
+
+IBTrACS dataset url: 
+https://www.ncei.noaa.gov/products/international-best-track-archive
