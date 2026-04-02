@@ -36,7 +36,7 @@ def generate_latex_table(results_df, output_path, caption="Baseline Performance 
     lines.append(r"\begin{table}[htbp]")
     lines.append(r"\centering")
     lines.append(r"\caption{" + caption + "}")
-    lines.append(r"\label{" + label + "}")
+    lines.append(r"\resizebox{\columnwidth}{!}{")
     lines.append(r"\begin{tabular}{" + col_fmt + "}")
     lines.append(r"\toprule")
 
@@ -63,6 +63,7 @@ def generate_latex_table(results_df, output_path, caption="Baseline Performance 
 
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
+    lines.append(r"}")
     lines.append(r"\end{table}")
 
     latex_str = "\n".join(lines)

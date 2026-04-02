@@ -142,7 +142,7 @@ def generate_latex_table(results_df, output_path, caption, label):
     lines.append(r"\begin{table}[htbp]")
     lines.append(r"\centering")
     lines.append(r"\caption{" + caption + "}")
-    lines.append(r"\label{" + label + "}")
+    lines.append(r"\resizebox{\columnwidth}{!}{")
     lines.append(r"\begin{tabular}{" + col_fmt + "}")
     lines.append(r"\toprule")
 
@@ -166,6 +166,7 @@ def generate_latex_table(results_df, output_path, caption, label):
 
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
+    lines.append(r"}")
     lines.append(r"\end{table}")
 
     latex_str = "\n".join(lines)
@@ -191,7 +192,7 @@ def generate_feature_selection_latex(selected_sets, fs_set, output_path,
     lines.append(r"\begin{table}[htbp]")
     lines.append(r"\centering")
     lines.append(r"\caption{" + caption + "}")
-    lines.append(r"\label{" + label + "}")
+    lines.append(r"\resizebox{\columnwidth}{!}{")
     lines.append(r"\begin{tabular}{" + col_fmt + "}")
     lines.append(r"\toprule")
 
@@ -225,6 +226,7 @@ def generate_feature_selection_latex(selected_sets, fs_set, output_path,
 
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
+    lines.append(r"}")
     lines.append(r"\end{table}")
 
     latex_str = "\n".join(lines)
@@ -409,11 +411,14 @@ def run_traditional_fs(dataset_name):
     print(f"\nSaved results to {tables_dir / 'traditional.csv'}")
     print(f"Saved models to {results_dir / 'models' / 'traditional'}")
 
+    method_names = ", ".join(m.replace("_", " ").title() for m in selected_sets.keys())
+    caption = f"Classification Performance with Traditional FS ({method_names} $\\rightarrow$ FS-Set)"
+
     # Generate performance LaTeX table
     generate_latex_table(
         results_df,
         output_path=tables_dir / "traditional.tex",
-        caption="Classification Performance with Traditional FS (FS-Set)",
+        caption=caption,
         label="tab:traditional_fs_results",
     )
 
