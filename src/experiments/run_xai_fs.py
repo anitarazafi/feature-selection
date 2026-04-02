@@ -6,6 +6,7 @@ import yaml
 import numpy as np
 from pathlib import Path
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
+from sklearn.inspection import permutation_importance
 import shap
 import lime
 import lime.lime_tabular
@@ -119,6 +120,47 @@ def apply_lime(X_train, X_val, X_test, y_train, model, cfg, k):
     }
     feature_importance = pd.Series(mean_weights).sort_values(ascending=False)
     selected_cols      = feature_importance.nlargest(k).index.tolist()
+
+    return selected_cols, feature_importance
+
+
+# ── Permutation Importance ────────────────────────────────────────────────────
+
+def apply_permutation_importance(X_train, X_val, X_test, y_val, model, cfg, k):
+    """
+    Compute permutation importance on the validation set using a pre-trained model.
+    Ranks features by mean decrease in AUC when each feature is shuffled.
+    Selects top-k features.
+    """
+    n_repeats   = cfg.get("n_repeats", 10)
+    max_samples = cfg.get("max_samples", 10000)
+
+    # Sample validation set if too large
+    if len(X_val) > max_samples:
+        idx      = np.random.choice(len(X_val), max_samples, replace=False)
+        X_val_sample = X_val.iloc[idx]
+        y_val_sample = y_val.iloc[idx] if hasattr(y_val, 'iloc') else y_val[idx]
+    else:
+        X_val_sample = X_val
+        y_val_sample = y_val
+
+    print(f"  Computing permutation importance ({n_repeats} repeats, {len(X_val_sample)} samples)...")
+
+    result = permutation_importance(
+        model,
+        X_val_sample,
+        y_val_sample,
+        n_repeats=n_repeats,
+        scoring="roc_auc",
+        random_state=42,
+        n_jobs=-1
+    )
+
+    feature_importance = pd.Series(
+        result.importances_mean,
+        index=X_train.columns
+    )
+    selected_cols = feature_importance.nlargest(k).index.tolist()
 
     return selected_cols, feature_importance
 
@@ -349,10 +391,20 @@ def run_xai_fs(dataset_name):
     MODELS  = load_models()
     results = []
 
-    # Pre-train a single XGBoost for SHAP and LIME explanation
-    print("Pre-training explainer model (XGBoost) for SHAP and LIME...\n")
+    # Pre-train a single XGBoost for SHAP, LIME, and Permutation Importance
+    print("Pre-training explainer model (XGBoost) for SHAP, LIME, and PI...\n")
     explainer_model = deepcopy(list(MODELS.values())[1])  # deep copy — isolated from MODELS
     explainer_model.fit(X_train, y_train)
+
+    # For Permutation Importance, config may specify a different estimator
+    eli5_cfg = xai_cfg.get("eli5", {})
+    pi_estimator_name = eli5_cfg.get("estimator", None)
+    if pi_estimator_name and pi_estimator_name in MODELS:
+        pi_model = deepcopy(MODELS[pi_estimator_name])
+        pi_model.fit(X_train, y_train)
+        print(f"Pre-trained PI estimator: {pi_estimator_name}\n")
+    else:
+        pi_model = explainer_model  # default to same XGBoost
 
     # Store selected feature sets for union
     selected_sets = {}
@@ -418,7 +470,36 @@ def run_xai_fs(dataset_name):
             selector_dir / f"lime_k{k}_importance.csv", header=True
         )
 
-    # ── 3. X-Set (Union) — Train only on this ────────────────────
+    # ── 3. Permutation Importance (selection only) ────────────────
+    if eli5_cfg.get("enabled", False):
+        print(f"\n{'─'*60}")
+        print(f"Feature Selection: PERMUTATION IMPORTANCE (k={k})")
+        print(f"{'─'*60}")
+
+        fs_start = time.time()
+        selected_features, feature_importance = apply_permutation_importance(
+            X_train, X_val, X_test, y_val,
+            model=pi_model,
+            cfg=eli5_cfg,
+            k=k
+        )
+        fs_time = time.time() - fs_start
+        selected_sets["permutation_importance"] = set(selected_features)
+        fs_times["permutation_importance"] = fs_time
+
+        print(f"Selected features ({k}): {selected_features}")
+        print(f"Feature selection time: {fs_time:.2f}s")
+
+        # Save importance scores and selected features
+        selector_dir = results_dir / "selectors" / "xai"
+        selector_dir.mkdir(parents=True, exist_ok=True)
+        with open(selector_dir / f"pi_k{k}_features.json", "w") as f:
+            json.dump(selected_features, f)
+        feature_importance.to_csv(
+            selector_dir / f"pi_k{k}_importance.csv", header=True
+        )
+
+    # ── 4. X-Set (Union) — Train only on this ────────────────────
     if selected_sets:
         print(f"\n{'─'*60}")
         print(f"Constructing X-Set (Union of XAI Methods)")

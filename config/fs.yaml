@@ -27,6 +27,16 @@ optimization:
     generations: 20
     F: 0.8
     CR: 0.9
+  simple_ga:
+    enabled: true
+    population_size: 50
+    generations: 30
+    selection_method: "tournament"
+    tournament_size: 3
+    crossover_type: "single_point"
+    crossover_rate: 0.8
+    mutation_rate: 0.01
+    elitism: 2
 
 xai:
   shap:
@@ -36,3 +46,8 @@ xai:
     enabled: true
     n_samples: 500
     max_samples: 10000
+  eli5:
+    enabled: true
+    n_repeats: 10
+    max_samples: 10000
+    estimator: "random_forest"

@@ -27,10 +27,10 @@ def get_metrics(y_true, y_pred, y_proba):
 def evaluate_feature_subset(X_train, X_val, y_train, y_val, selected_cols, model):
     """
     Evaluate a feature subset using AUC on validation set.
-    Returns negative AUC (since optimizers minimize).
+    Returns AUC score.
     """
     if len(selected_cols) == 0:
-        return 0.0  # penalize empty subsets
+        return 0.0
 
     model.fit(X_train[selected_cols], y_train)
     y_proba = model.predict_proba(X_val[selected_cols])[:, 1]
@@ -40,22 +40,16 @@ def evaluate_feature_subset(X_train, X_val, y_train, y_val, selected_cols, model
 # ── PSO ───────────────────────────────────────────────────────────────────────
 
 def pso_objective(position, X_train, X_val, y_train, y_val, feature_names, model, target_k):
-    """
-    Objective function for PSO.
-    position: (n_particles, n_features) binary-like matrix
-    Returns cost (1 - AUC) for each particle.
-    """
     n_particles = position.shape[0]
     costs = np.zeros(n_particles)
 
     for i in range(n_particles):
-        # Convert continuous position to binary by selecting top-k features
         top_k_idx    = np.argsort(position[i])[-target_k:]
         selected_cols = [feature_names[j] for j in top_k_idx]
         auc = evaluate_feature_subset(
             X_train, X_val, y_train, y_val, selected_cols, model
         )
-        costs[i] = 1 - auc  # minimize cost = maximize AUC
+        costs[i] = 1 - auc
 
     return costs
 
@@ -92,7 +86,6 @@ def apply_pso(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
         target_k=target_k
     )
 
-    # Get final selected features from best position
     top_k_idx     = np.argsort(best_pos)[-target_k:]
     selected_cols = [feature_names[j] for j in top_k_idx]
     best_auc      = 1 - best_cost
@@ -111,7 +104,6 @@ def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
     n_features      = X_train.shape[1]
     feature_names   = list(X_train.columns)
 
-    # scipy popsize is a multiplier — convert to actual population size
     actual_popsize = max(1, population_size // n_features)
 
     best_result = {"auc": 0, "cols": []}
@@ -147,6 +139,122 @@ def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
 
     print(f"  DE best val AUC: {best_auc:.4f}")
     return selected_cols, result
+
+
+# ── Simple GA ─────────────────────────────────────────────────────────────────
+
+def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
+    """
+    Simple Genetic Algorithm for feature selection.
+    Each individual is a binary vector of length n_features
+    with exactly target_k ones. Fitness = validation AUC.
+    """
+    population_size  = cfg.get("population_size", 50)
+    generations      = cfg.get("generations", 30)
+    crossover_rate   = cfg.get("crossover_rate", 0.8)
+    mutation_rate    = cfg.get("mutation_rate", 0.01)
+    tournament_size  = cfg.get("tournament_size", 3)
+    elitism          = cfg.get("elitism", 2)
+    n_features       = X_train.shape[1]
+    feature_names    = list(X_train.columns)
+
+    rng = np.random.RandomState(42)
+
+    # Initialize population: each individual has exactly target_k ones
+    population = np.zeros((population_size, n_features), dtype=int)
+    for i in range(population_size):
+        idx = rng.choice(n_features, target_k, replace=False)
+        population[i, idx] = 1
+
+    def ensure_k_features(individual):
+        """Repair an individual to have exactly target_k active features."""
+        active = np.where(individual == 1)[0]
+        if len(active) > target_k:
+            drop = rng.choice(active, len(active) - target_k, replace=False)
+            individual[drop] = 0
+        elif len(active) < target_k:
+            inactive = np.where(individual == 0)[0]
+            add = rng.choice(inactive, target_k - len(active), replace=False)
+            individual[add] = 1
+        return individual
+
+    def fitness(individual):
+        selected_idx  = np.where(individual == 1)[0]
+        selected_cols = [feature_names[j] for j in selected_idx]
+        if len(selected_cols) == 0:
+            return 0.0
+        return evaluate_feature_subset(
+            X_train, X_val, y_train, y_val, selected_cols, model
+        )
+
+    def tournament_selection(pop, scores):
+        candidates = rng.choice(len(pop), tournament_size, replace=False)
+        best_idx   = candidates[np.argmax(scores[candidates])]
+        return pop[best_idx].copy()
+
+    # Evaluate initial population
+    fitness_scores = np.array([fitness(ind) for ind in population])
+
+    best_ever_idx  = np.argmax(fitness_scores)
+    best_ever_fit  = fitness_scores[best_ever_idx]
+    best_ever_ind  = population[best_ever_idx].copy()
+
+    print(f"  GA Gen  0: best AUC = {best_ever_fit:.4f}")
+
+    # Evolution loop
+    for gen in range(1, generations + 1):
+        new_population = []
+
+        # Elitism
+        elite_idx = np.argsort(fitness_scores)[-elitism:]
+        for ei in elite_idx:
+            new_population.append(population[ei].copy())
+
+        # Fill rest via selection, crossover, mutation
+        while len(new_population) < population_size:
+            parent1 = tournament_selection(population, fitness_scores)
+            parent2 = tournament_selection(population, fitness_scores)
+
+            # Single-point crossover
+            if rng.random() < crossover_rate:
+                point  = rng.randint(1, n_features)
+                child1 = np.concatenate([parent1[:point], parent2[point:]])
+                child2 = np.concatenate([parent2[:point], parent1[point:]])
+            else:
+                child1 = parent1.copy()
+                child2 = parent2.copy()
+
+            # Bit-flip mutation
+            for child in [child1, child2]:
+                mask = rng.random(n_features) < mutation_rate
+                child[mask] = 1 - child[mask]
+
+            # Repair to exactly k features
+            child1 = ensure_k_features(child1)
+            child2 = ensure_k_features(child2)
+
+            new_population.append(child1)
+            if len(new_population) < population_size:
+                new_population.append(child2)
+
+        population     = np.array(new_population[:population_size])
+        fitness_scores = np.array([fitness(ind) for ind in population])
+
+        gen_best_idx = np.argmax(fitness_scores)
+        gen_best_fit = fitness_scores[gen_best_idx]
+
+        if gen_best_fit > best_ever_fit:
+            best_ever_fit = gen_best_fit
+            best_ever_ind = population[gen_best_idx].copy()
+
+        if gen % 5 == 0 or gen == generations:
+            print(f"  GA Gen {gen:>2d}: best AUC = {best_ever_fit:.4f}")
+
+    selected_idx  = np.where(best_ever_ind == 1)[0]
+    selected_cols = [feature_names[j] for j in selected_idx]
+
+    print(f"  GA best val AUC: {best_ever_fit:.4f}")
+    return selected_cols, best_ever_ind
 
 
 # ── Train & Evaluate ──────────────────────────────────────────────────────────
@@ -432,7 +540,31 @@ def run_optimization_fs(dataset_name):
         with open(selector_dir / f"de_k{k}_result.pkl", "wb") as f:
             pickle.dump(result, f)
 
-    # ── 3. Op-Set (Union) — Train only on this ───────────────────
+    # ── 3. Simple GA (selection only) ─────────────────────────────
+    ga_cfg = opt_cfg.get("simple_ga", {})
+    if ga_cfg.get("enabled", False):
+        print(f"\n{'─'*60}")
+        print(f"Feature Selection: SIMPLE GA (k={k})")
+        print(f"{'─'*60}")
+
+        fs_start = time.time()
+        selected_features, best_individual = apply_simple_ga(
+            X_train, X_val, X_test, y_train, y_val,
+            cfg=ga_cfg, target_k=k, model=eval_model
+        )
+        fs_time = time.time() - fs_start
+        selected_sets["simple_ga"] = set(selected_features)
+        fs_times["simple_ga"] = fs_time
+
+        print(f"Selected features ({k}): {selected_features}")
+        print(f"Feature selection time: {fs_time:.2f}s")
+
+        selector_dir = results_dir / "selectors" / "optimization"
+        selector_dir.mkdir(parents=True, exist_ok=True)
+        with open(selector_dir / f"ga_k{k}_features.json", "w") as f:
+            json.dump(selected_features, f)
+
+    # ── 4. Op-Set (Union) — Train only on this ───────────────────
     if selected_sets:
         print(f"\n{'─'*60}")
         print(f"Constructing Op-Set (Union of Optimization Methods)")
