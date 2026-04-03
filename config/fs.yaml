@@ -7,7 +7,7 @@ traditional:
   mutual_information:
     enabled: true
   chi2:
-    enabled: true
+    enabled: false
   rfe:
     enabled: true
     step: 5
@@ -28,7 +28,7 @@ optimization:
     F: 0.8
     CR: 0.9
   simple_ga:
-    enabled: true
+    enabled: false
     population_size: 50
     generations: 30
     selection_method: "tournament"
@@ -47,7 +47,7 @@ xai:
     n_samples: 500
     max_samples: 10000
   eli5:
-    enabled: true
+    enabled: false
     n_repeats: 10
     max_samples: 10000
     estimator: "random_forest"
