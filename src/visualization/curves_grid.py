@@ -39,9 +39,9 @@ def plot_roc_curves(dataset_name):
             "color": "#888888",
             "linestyle": "--",
         },
-        "FS-Set (16 feat.)": {
+        "FS-Set (12 feat.)": {
             "path": results_dir / "predictions" / "traditional" / "fs_set",
-            "pattern": "{model}_n16_predictions.json",
+            "pattern": "{model}_n12_predictions.json",
             "color": "#4A9E4A",
             "linestyle": "-",
         },
