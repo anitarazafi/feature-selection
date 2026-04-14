@@ -23,8 +23,10 @@ def get_metrics(y_true, y_pred, y_proba):
     }
 
 
-def apply_mutual_information(X_train, X_val, X_test, y_train, k):
-    selector = SelectKBest(mutual_info_classif, k=k)
+def apply_mutual_information(X_train, X_val, X_test, y_train, k, seed=42):
+    def mi_scorer(X, y):
+        return mutual_info_classif(X, y, random_state=seed)
+    selector = SelectKBest(mi_scorer, k=k)
     selector.fit(X_train, y_train)
     selected_cols = X_train.columns[selector.get_support()]
     return X_train[selected_cols], X_val[selected_cols], X_test[selected_cols], selector
@@ -50,7 +52,7 @@ def apply_rfe(X_train, X_val, X_test, y_train, estimator, k, cfg):
 
 def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
                        fs_name, n_features, selected_features,
-                       results_dir, fs_time, results):
+                       results_dir, fs_time, results, seed=42):
     for model_name, model in MODELS.items():
         print(f"  Training {model_name}...")
 
@@ -90,20 +92,22 @@ def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
             "model": model_name,
             "n_features": n_features,
             "selected_features": selected_features,
+            "seed": seed,
         }
-        with open(pred_dir / f"{model_name}_n{n_features}_predictions.json", "w") as f:
+        with open(pred_dir / f"{model_name}_n{n_features}_seed{seed}_predictions.json", "w") as f:
             json.dump(predictions, f)
 
         # Save model
         model_dir = results_dir / "models" / "traditional" / fs_name
         model_dir.mkdir(parents=True, exist_ok=True)
-        with open(model_dir / f"{model_name}_n{n_features}.pkl", "wb") as f:
+        with open(model_dir / f"{model_name}_n{n_features}_seed{seed}.pkl", "wb") as f:
             pickle.dump(model, f)
 
         results.append({
             "model":         model_name,
             "fs_method":     fs_name,
             "n_features":    n_features,
+            "seed":          seed,
             "fs_time":       round(fs_time, 2),
             "val_accuracy":  round(val_metrics["accuracy"],  4),
             "val_precision": round(val_metrics["precision"], 4),
@@ -185,7 +189,6 @@ def generate_feature_selection_latex(selected_sets, fs_set, output_path,
     all_features = sorted(fs_set)
     methods = list(selected_sets.keys())
 
-    # Column format: l for feature name, c for each method, c for union
     col_fmt = "l" + "c" * (len(methods) + 1)
 
     lines = []
@@ -196,13 +199,11 @@ def generate_feature_selection_latex(selected_sets, fs_set, output_path,
     lines.append(r"\begin{tabular}{" + col_fmt + "}")
     lines.append(r"\toprule")
 
-    # Header row
     method_headers = [m.replace("_", r"\_") for m in methods]
     header = "Feature & " + " & ".join(method_headers) + r" & FS-Set \\"
     lines.append(header)
     lines.append(r"\midrule")
 
-    # One row per feature
     for feat in all_features:
         feat_display = feat.replace("_", r"\_")
         cells = [feat_display]
@@ -211,13 +212,11 @@ def generate_feature_selection_latex(selected_sets, fs_set, output_path,
                 cells.append(r"\checkmark")
             else:
                 cells.append("")
-        # Union column — always checkmark since all_features comes from fs_set
         cells.append(r"\checkmark")
         lines.append(" & ".join(cells) + r" \\")
 
     lines.append(r"\midrule")
 
-    # Summary row with totals
     count_cells = [r"\textbf{Total}"]
     for method in methods:
         count_cells.append(str(len(selected_sets[method])))
@@ -238,9 +237,9 @@ def generate_feature_selection_latex(selected_sets, fs_set, output_path,
     return latex_str
 
 
-def run_traditional_fs(dataset_name):
+def run_traditional_fs(dataset_name, seed=42):
     print(f"\n{'='*60}")
-    print(f"= Running Traditional Feature Selection for: {dataset_name}")
+    print(f"= Running Traditional Feature Selection for: {dataset_name} (seed={seed})")
     print(f"{'='*60}\n")
 
     # Load dataset config
@@ -274,7 +273,7 @@ def run_traditional_fs(dataset_name):
     print(f"Features (original): {X_train.shape[1]}")
     print(f"k (features to select): {k}\n")
 
-    MODELS  = load_models()
+    MODELS  = load_models(seed=seed)
     results = []
 
     # Store selected feature sets for union
@@ -290,7 +289,7 @@ def run_traditional_fs(dataset_name):
 
         fs_start = time.time()
         _, _, _, selector = apply_mutual_information(
-            X_train, X_val, X_test, y_train, k=k
+            X_train, X_val, X_test, y_train, k=k, seed=seed
         )
         fs_time = time.time() - fs_start
         selected_features = X_train.columns[selector.get_support()].tolist()
@@ -302,9 +301,10 @@ def run_traditional_fs(dataset_name):
 
         selector_dir = results_dir / "selectors" / "traditional"
         selector_dir.mkdir(parents=True, exist_ok=True)
-        with open(selector_dir / f"mutual_information_k{k}_selector.pkl", "wb") as f:
-            pickle.dump(selector, f)
-        with open(selector_dir / f"mutual_information_k{k}_features.json", "w") as f:
+        # Note: MI selector with custom scorer cannot be pickled; skip saving selector object
+        #with open(selector_dir / f"mutual_information_k{k}_seed{seed}_selector.pkl", "wb") as f:
+        #    pickle.dump(selector, f)
+        with open(selector_dir / f"mutual_information_k{k}_seed{seed}_features.json", "w") as f:
             json.dump(selected_features, f)
 
     # ── 2. Chi-Square (selection only) ────────────────────────────
@@ -328,9 +328,9 @@ def run_traditional_fs(dataset_name):
 
         selector_dir = results_dir / "selectors" / "traditional"
         selector_dir.mkdir(parents=True, exist_ok=True)
-        with open(selector_dir / f"chi2_k{k}_selector.pkl", "wb") as f:
+        with open(selector_dir / f"chi2_k{k}_seed{seed}_selector.pkl", "wb") as f:
             pickle.dump(selector, f)
-        with open(selector_dir / f"chi2_k{k}_features.json", "w") as f:
+        with open(selector_dir / f"chi2_k{k}_seed{seed}_features.json", "w") as f:
             json.dump(selected_features, f)
 
     # ── 3. RFE (selection only) ───────────────────────────────────
@@ -358,9 +358,9 @@ def run_traditional_fs(dataset_name):
 
         selector_dir = results_dir / "selectors" / "traditional"
         selector_dir.mkdir(parents=True, exist_ok=True)
-        with open(selector_dir / f"rfe_k{k}_selector.pkl", "wb") as f:
+        with open(selector_dir / f"rfe_k{k}_seed{seed}_selector.pkl", "wb") as f:
             pickle.dump(selector, f)
-        with open(selector_dir / f"rfe_k{k}_features.json", "w") as f:
+        with open(selector_dir / f"rfe_k{k}_seed{seed}_features.json", "w") as f:
             json.dump(selected_features, f)
 
     # ── 4. FS-Set (Union) — Train only on this ───────────────────
@@ -388,8 +388,9 @@ def run_traditional_fs(dataset_name):
             "n_features": n_fs_set,
             "contributing_methods": {m: sorted(f) for m, f in selected_sets.items()},
             "fs_times": {m: round(t, 2) for m, t in fs_times.items()},
+            "seed": seed,
         }
-        with open(selector_dir / "fs_set.json", "w") as f:
+        with open(selector_dir / f"fs_set_seed{seed}.json", "w") as f:
             json.dump(fs_set_info, f, indent=2)
 
         # Train and evaluate on FS-Set only
@@ -400,15 +401,15 @@ def run_traditional_fs(dataset_name):
         train_and_evaluate(
             MODELS, X_tr_fs, X_v_fs, X_te_fs, y_train, y_val, y_test,
             "fs_set", n_fs_set, fs_set,
-            results_dir, total_fs_time, results
+            results_dir, total_fs_time, results, seed=seed
         )
 
     # ── Save results ──────────────────────────────────────────────
     tables_dir = results_dir / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     results_df = pd.DataFrame(results)
-    results_df.to_csv(tables_dir / "traditional.csv", index=False)
-    print(f"\nSaved results to {tables_dir / 'traditional.csv'}")
+    results_df.to_csv(tables_dir / f"traditional_seed{seed}.csv", index=False)
+    print(f"\nSaved results to {tables_dir / f'traditional_seed{seed}.csv'}")
     print(f"Saved models to {results_dir / 'models' / 'traditional'}")
 
     method_names = ", ".join(m.replace("_", " ").title() for m in selected_sets.keys())
@@ -417,7 +418,7 @@ def run_traditional_fs(dataset_name):
     # Generate performance LaTeX table
     generate_latex_table(
         results_df,
-        output_path=tables_dir / "traditional.tex",
+        output_path=tables_dir / f"traditional_seed{seed}.tex",
         caption=caption,
         label="tab:traditional_fs_results",
     )
@@ -425,7 +426,7 @@ def run_traditional_fs(dataset_name):
     # Generate feature selection LaTeX table
     generate_feature_selection_latex(
         selected_sets, fs_set,
-        output_path=tables_dir / "traditional_features.tex",
+        output_path=tables_dir / f"traditional_features_seed{seed}.tex",
         caption="Features Selected by Traditional Methods",
         label="tab:traditional_fs_features",
     )

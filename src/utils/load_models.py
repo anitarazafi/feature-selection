@@ -11,9 +11,15 @@ MODEL_REGISTRY = {
     "mlp": MLPClassifier
 }
 
-def load_models():
+SEED_PARAM = {
+    "random_forest": "random_state",
+    "xgboost": "random_state",
+    "mlp": "random_state",
+}
+ 
+def load_models(seed=42):
     """
-    Load models based on config.
+    Load models based on config, with a configurable random seed.
     """
     config_path = CONFIG_DIR / "models.yaml"
     with open(config_path, "r") as f:
@@ -30,6 +36,12 @@ def load_models():
         
         model_class = MODEL_REGISTRY[model_name]
         params = hyperparams.get(model_name, {})
+ 
+        # Inject seed
+        seed_key = SEED_PARAM.get(model_name)
+        if seed_key:
+            params[seed_key] = seed
+ 
         models[model_name] = model_class(**params)
     
     return models

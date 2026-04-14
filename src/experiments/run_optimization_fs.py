@@ -25,13 +25,8 @@ def get_metrics(y_true, y_pred, y_proba):
 
 
 def evaluate_feature_subset(X_train, X_val, y_train, y_val, selected_cols, model):
-    """
-    Evaluate a feature subset using AUC on validation set.
-    Returns AUC score.
-    """
     if len(selected_cols) == 0:
         return 0.0
-
     model.fit(X_train[selected_cols], y_train)
     y_proba = model.predict_proba(X_val[selected_cols])[:, 1]
     return roc_auc_score(y_val, y_proba)
@@ -42,7 +37,6 @@ def evaluate_feature_subset(X_train, X_val, y_train, y_val, selected_cols, model
 def pso_objective(position, X_train, X_val, y_train, y_val, feature_names, model, target_k):
     n_particles = position.shape[0]
     costs = np.zeros(n_particles)
-
     for i in range(n_particles):
         top_k_idx    = np.argsort(position[i])[-target_k:]
         selected_cols = [feature_names[j] for j in top_k_idx]
@@ -50,11 +44,10 @@ def pso_objective(position, X_train, X_val, y_train, y_val, feature_names, model
             X_train, X_val, y_train, y_val, selected_cols, model
         )
         costs[i] = 1 - auc
-
     return costs
 
 
-def apply_pso(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
+def apply_pso(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model, seed=42):
     n_particles  = cfg.get("n_particles", 30)
     iterations   = cfg.get("iterations", 20)
     w            = cfg.get("w", 0.7)
@@ -62,6 +55,8 @@ def apply_pso(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
     c2           = cfg.get("c2", 1.5)
     n_features   = X_train.shape[1]
     feature_names = list(X_train.columns)
+
+    np.random.seed(seed)
 
     options = {"c1": c1, "c2": c2, "w": w}
     bounds  = (np.zeros(n_features), np.ones(n_features))
@@ -96,7 +91,7 @@ def apply_pso(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
 
 # ── DE ────────────────────────────────────────────────────────────────────────
 
-def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
+def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model, seed=42):
     population_size = cfg.get("population_size", 30)
     generations     = cfg.get("generations", 20)
     F               = cfg.get("F", 0.8)
@@ -128,7 +123,7 @@ def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
         popsize=actual_popsize,
         mutation=F,
         recombination=CR,
-        seed=42,
+        seed=seed,
         tol=1e-4,
         polish=False,
         disp=True
@@ -143,12 +138,7 @@ def apply_de(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
 
 # ── Simple GA ─────────────────────────────────────────────────────────────────
 
-def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model):
-    """
-    Simple Genetic Algorithm for feature selection.
-    Each individual is a binary vector of length n_features
-    with exactly target_k ones. Fitness = validation AUC.
-    """
+def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model, seed=42):
     population_size  = cfg.get("population_size", 50)
     generations      = cfg.get("generations", 30)
     crossover_rate   = cfg.get("crossover_rate", 0.8)
@@ -158,16 +148,14 @@ def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model
     n_features       = X_train.shape[1]
     feature_names    = list(X_train.columns)
 
-    rng = np.random.RandomState(42)
+    rng = np.random.RandomState(seed)
 
-    # Initialize population: each individual has exactly target_k ones
     population = np.zeros((population_size, n_features), dtype=int)
     for i in range(population_size):
         idx = rng.choice(n_features, target_k, replace=False)
         population[i, idx] = 1
 
     def ensure_k_features(individual):
-        """Repair an individual to have exactly target_k active features."""
         active = np.where(individual == 1)[0]
         if len(active) > target_k:
             drop = rng.choice(active, len(active) - target_k, replace=False)
@@ -192,7 +180,6 @@ def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model
         best_idx   = candidates[np.argmax(scores[candidates])]
         return pop[best_idx].copy()
 
-    # Evaluate initial population
     fitness_scores = np.array([fitness(ind) for ind in population])
 
     best_ever_idx  = np.argmax(fitness_scores)
@@ -201,21 +188,17 @@ def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model
 
     print(f"  GA Gen  0: best AUC = {best_ever_fit:.4f}")
 
-    # Evolution loop
     for gen in range(1, generations + 1):
         new_population = []
 
-        # Elitism
         elite_idx = np.argsort(fitness_scores)[-elitism:]
         for ei in elite_idx:
             new_population.append(population[ei].copy())
 
-        # Fill rest via selection, crossover, mutation
         while len(new_population) < population_size:
             parent1 = tournament_selection(population, fitness_scores)
             parent2 = tournament_selection(population, fitness_scores)
 
-            # Single-point crossover
             if rng.random() < crossover_rate:
                 point  = rng.randint(1, n_features)
                 child1 = np.concatenate([parent1[:point], parent2[point:]])
@@ -224,12 +207,10 @@ def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model
                 child1 = parent1.copy()
                 child2 = parent2.copy()
 
-            # Bit-flip mutation
             for child in [child1, child2]:
                 mask = rng.random(n_features) < mutation_rate
                 child[mask] = 1 - child[mask]
 
-            # Repair to exactly k features
             child1 = ensure_k_features(child1)
             child2 = ensure_k_features(child2)
 
@@ -261,7 +242,7 @@ def apply_simple_ga(X_train, X_val, X_test, y_train, y_val, cfg, target_k, model
 
 def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
                        fs_name, n_features, selected_features,
-                       results_dir, fs_time, results):
+                       results_dir, fs_time, results, seed=42):
     for model_name, model in MODELS.items():
         print(f"  Training {model_name}...")
 
@@ -284,10 +265,9 @@ def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
             print(f"    {metric:<12} {val_metrics[metric]:>8.4f} {test_metrics[metric]:>8.4f}")
         print()
 
-        # Save predictions
         pred_dir = results_dir / "predictions" / "optimization" / fs_name
         pred_dir.mkdir(parents=True, exist_ok=True)
-        with open(pred_dir / f"{model_name}_n{n_features}_predictions.json", "w") as f:
+        with open(pred_dir / f"{model_name}_n{n_features}_seed{seed}_predictions.json", "w") as f:
             json.dump({
                 "val": {
                     "y_true": y_val.tolist(),
@@ -302,18 +282,19 @@ def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
                 "model": model_name,
                 "n_features": n_features,
                 "selected_features": selected_features,
+                "seed": seed,
             }, f)
 
-        # Save model
         model_dir = results_dir / "models" / "optimization" / fs_name
         model_dir.mkdir(parents=True, exist_ok=True)
-        with open(model_dir / f"{model_name}_n{n_features}.pkl", "wb") as f:
+        with open(model_dir / f"{model_name}_n{n_features}_seed{seed}.pkl", "wb") as f:
             pickle.dump(model, f)
 
         results.append({
             "model":          model_name,
             "fs_method":      fs_name,
             "n_features":     n_features,
+            "seed":           seed,
             "fs_time":        round(fs_time, 2),
             "val_accuracy":   round(val_metrics["accuracy"],  4),
             "val_precision":  round(val_metrics["precision"], 4),
@@ -332,8 +313,6 @@ def train_and_evaluate(MODELS, X_tr, X_v, X_te, y_train, y_val, y_test,
 # ── LaTeX Tables ──────────────────────────────────────────────────────────────
 
 def generate_latex_table(results_df, output_path, caption, label):
-    """Generate a LaTeX table for performance metrics."""
-
     display_cols = {
         "model":          "Model",
         "n_features":     "\\# Features",
@@ -346,7 +325,6 @@ def generate_latex_table(results_df, output_path, caption, label):
     }
 
     df = results_df[list(display_cols.keys())].copy()
-
     n_cols = len(display_cols)
     col_fmt = "l" + "c" * (n_cols - 1)
 
@@ -357,7 +335,6 @@ def generate_latex_table(results_df, output_path, caption, label):
     lines.append(r"\resizebox{\columnwidth}{!}{")
     lines.append(r"\begin{tabular}{" + col_fmt + "}")
     lines.append(r"\toprule")
-
     header = " & ".join(display_cols.values()) + r" \\"
     lines.append(header)
     lines.append(r"\midrule")
@@ -382,21 +359,15 @@ def generate_latex_table(results_df, output_path, caption, label):
     lines.append(r"\end{table}")
 
     latex_str = "\n".join(lines)
-
     with open(output_path, "w") as f:
         f.write(latex_str)
-
     print(f"Saved LaTeX table to {output_path}")
     return latex_str
 
 
-def generate_feature_selection_latex(selected_sets, op_set, output_path,
-                                     caption, label):
-    """Generate a LaTeX table showing selected features per method and the union."""
-
+def generate_feature_selection_latex(selected_sets, op_set, output_path, caption, label):
     all_features = sorted(op_set)
     methods = list(selected_sets.keys())
-
     col_fmt = "l" + "c" * (len(methods) + 1)
 
     lines = []
@@ -424,7 +395,6 @@ def generate_feature_selection_latex(selected_sets, op_set, output_path,
         lines.append(" & ".join(cells) + r" \\")
 
     lines.append(r"\midrule")
-
     count_cells = [r"\textbf{Total}"]
     for method in methods:
         count_cells.append(str(len(selected_sets[method])))
@@ -437,22 +407,19 @@ def generate_feature_selection_latex(selected_sets, op_set, output_path,
     lines.append(r"\end{table}")
 
     latex_str = "\n".join(lines)
-
     with open(output_path, "w") as f:
         f.write(latex_str)
-
     print(f"Saved feature selection LaTeX table to {output_path}")
     return latex_str
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def run_optimization_fs(dataset_name):
+def run_optimization_fs(dataset_name, seed=42):
     print(f"\n{'='*60}")
-    print(f"= Running Optimization-Based Feature Selection for: {dataset_name}")
+    print(f"= Running Optimization-Based FS for: {dataset_name} (seed={seed})")
     print(f"{'='*60}\n")
 
-    # Load configs
     with open(CONFIG_DIR / "datasets.yaml", "r") as f:
         all_configs = yaml.safe_load(f)
     if dataset_name not in all_configs:
@@ -482,13 +449,11 @@ def run_optimization_fs(dataset_name):
     print(f"Features (original): {X_train.shape[1]}")
     print(f"k (features to select): {k}\n")
 
-    MODELS  = load_models()
+    MODELS  = load_models(seed=seed)
     results = []
 
-    # Use a single estimator for optimization fitness evaluation
-    eval_model = list(MODELS.values())[1]  # xgboost — fastest and most stable
+    eval_model = list(MODELS.values())[1]
 
-    # Store selected feature sets for union
     selected_sets = {}
     fs_times = {}
 
@@ -502,7 +467,7 @@ def run_optimization_fs(dataset_name):
         fs_start = time.time()
         selected_features, optimizer = apply_pso(
             X_train, X_val, X_test, y_train, y_val,
-            cfg=pso_cfg, target_k=k, model=eval_model
+            cfg=pso_cfg, target_k=k, model=eval_model, seed=seed
         )
         fs_time = time.time() - fs_start
         selected_sets["pso"] = set(selected_features)
@@ -513,7 +478,7 @@ def run_optimization_fs(dataset_name):
 
         selector_dir = results_dir / "selectors" / "optimization"
         selector_dir.mkdir(parents=True, exist_ok=True)
-        with open(selector_dir / f"pso_k{k}_features.json", "w") as f:
+        with open(selector_dir / f"pso_k{k}_seed{seed}_features.json", "w") as f:
             json.dump(selected_features, f)
 
     # ── 2. Differential Evolution (selection only) ────────────────
@@ -526,7 +491,7 @@ def run_optimization_fs(dataset_name):
         fs_start = time.time()
         selected_features, result = apply_de(
             X_train, X_val, X_test, y_train, y_val,
-            cfg=de_cfg, target_k=k, model=eval_model
+            cfg=de_cfg, target_k=k, model=eval_model, seed=seed
         )
         fs_time = time.time() - fs_start
         selected_sets["differential_evolution"] = set(selected_features)
@@ -537,9 +502,9 @@ def run_optimization_fs(dataset_name):
 
         selector_dir = results_dir / "selectors" / "optimization"
         selector_dir.mkdir(parents=True, exist_ok=True)
-        with open(selector_dir / f"de_k{k}_features.json", "w") as f:
+        with open(selector_dir / f"de_k{k}_seed{seed}_features.json", "w") as f:
             json.dump(selected_features, f)
-        with open(selector_dir / f"de_k{k}_result.pkl", "wb") as f:
+        with open(selector_dir / f"de_k{k}_seed{seed}_result.pkl", "wb") as f:
             pickle.dump(result, f)
 
     # ── 3. Simple GA (selection only) ─────────────────────────────
@@ -552,7 +517,7 @@ def run_optimization_fs(dataset_name):
         fs_start = time.time()
         selected_features, best_individual = apply_simple_ga(
             X_train, X_val, X_test, y_train, y_val,
-            cfg=ga_cfg, target_k=k, model=eval_model
+            cfg=ga_cfg, target_k=k, model=eval_model, seed=seed
         )
         fs_time = time.time() - fs_start
         selected_sets["simple_ga"] = set(selected_features)
@@ -563,7 +528,7 @@ def run_optimization_fs(dataset_name):
 
         selector_dir = results_dir / "selectors" / "optimization"
         selector_dir.mkdir(parents=True, exist_ok=True)
-        with open(selector_dir / f"ga_k{k}_features.json", "w") as f:
+        with open(selector_dir / f"ga_k{k}_seed{seed}_features.json", "w") as f:
             json.dump(selected_features, f)
 
     # ── 4. Op-Set (Union) — Train only on this ───────────────────
@@ -583,7 +548,6 @@ def run_optimization_fs(dataset_name):
         print(f"Op-Set size: {n_op_set}")
         print(f"Total FS time: {total_fs_time:.2f}s\n")
 
-        # Save Op-Set info
         selector_dir = results_dir / "selectors" / "optimization"
         selector_dir.mkdir(parents=True, exist_ok=True)
         op_set_info = {
@@ -591,11 +555,11 @@ def run_optimization_fs(dataset_name):
             "n_features": n_op_set,
             "contributing_methods": {m: sorted(f) for m, f in selected_sets.items()},
             "fs_times": {m: round(t, 2) for m, t in fs_times.items()},
+            "seed": seed,
         }
-        with open(selector_dir / "op_set.json", "w") as f:
+        with open(selector_dir / f"op_set_seed{seed}.json", "w") as f:
             json.dump(op_set_info, f, indent=2)
 
-        # Train and evaluate on Op-Set only
         X_tr_op = X_train[op_set]
         X_v_op  = X_val[op_set]
         X_te_op = X_test[op_set]
@@ -603,32 +567,30 @@ def run_optimization_fs(dataset_name):
         train_and_evaluate(
             MODELS, X_tr_op, X_v_op, X_te_op, y_train, y_val, y_test,
             "op_set", n_op_set, op_set,
-            results_dir, total_fs_time, results
+            results_dir, total_fs_time, results, seed=seed
         )
 
     # ── Save results ──────────────────────────────────────────────
     tables_dir = results_dir / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     results_df = pd.DataFrame(results)
-    results_df.to_csv(tables_dir / "optimization.csv", index=False)
-    print(f"\nSaved results to {tables_dir / 'optimization.csv'}")
+    results_df.to_csv(tables_dir / f"optimization_seed{seed}.csv", index=False)
+    print(f"\nSaved results to {tables_dir / f'optimization_seed{seed}.csv'}")
     print(f"Saved models to {results_dir / 'models' / 'optimization'}")
 
     method_names = ", ".join(m.replace("_", " ").title() for m in selected_sets.keys())
     caption = f"Classification Performance with Optimization-Based FS ({method_names} $\\rightarrow$ Op-Set)"
 
-    # Generate performance LaTeX table
     generate_latex_table(
         results_df,
-        output_path=tables_dir / "optimization.tex",
+        output_path=tables_dir / f"optimization_seed{seed}.tex",
         caption=caption,
         label="tab:optimization_fs_results",
     )
 
-    # Generate feature selection LaTeX table
     generate_feature_selection_latex(
         selected_sets, op_set,
-        output_path=tables_dir / "optimization_features.tex",
+        output_path=tables_dir / f"optimization_features_seed{seed}.tex",
         caption="Features Selected by Optimization-Based Methods",
         label="tab:optimization_fs_features",
     )
