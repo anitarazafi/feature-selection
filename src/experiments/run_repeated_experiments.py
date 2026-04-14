@@ -14,8 +14,9 @@ from src.experiments.run_optimization_fs import run_optimization_fs
 from src.experiments.run_xai_fs import run_xai_fs
 
 
-SEEDS = [42, 123, 456, 789, 1024]
+#SEEDS = [42, 123, 456, 789, 1024]
 
+SEEDS = [42, 123, 456, 789, 1024, 2023, 2024, 3333, 5555, 9999]
 
 def run_all_experiments(dataset_name):
     """
