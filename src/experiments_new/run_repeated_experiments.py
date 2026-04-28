@@ -6,10 +6,10 @@ import time
 from pathlib import Path
 
 from src.utils.paths import BASE_DIR, CONFIG_DIR
-from src.experiments.run_baseline import train_baseline
-from src.experiments.run_traditional_fs import run_traditional_fs
-from src.experiments.run_optimization_fs import run_optimization_fs
-from src.experiments.run_xai_fs import run_xai_fs
+from src.experiments_new.run_baseline import train_baseline
+from src.experiments_new.run_traditional_fs import run_traditional_fs
+from src.experiments_new.run_optimization_fs import run_optimization_fs
+from src.experiments_new.run_xai_fs import run_xai_fs
 
 SEEDS = [42, 123, 456, 789, 1024, 2023, 2024, 3333, 5555, 9999]
 
